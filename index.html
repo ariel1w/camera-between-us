@@ -37,12 +37,21 @@
 <div id="hud">
   <div class="vf tl"></div><div class="vf tr"></div><div class="vf bl"></div><div class="vf br"></div>
   <div id="hud-tl"><div class="mark">THE CAMERA BETWEEN US</div><div id="sec"></div></div>
-  <div id="hud-tr"><span class="rec"></span><span id="tc">00:00:00:00</span><span id="spd"></span><button id="play">▶ PLAY</button></div>
+  <div id="hud-tr"><span class="rec"></span><span id="tc">00:00:00:00</span><span id="spd"></span></div>
   <div id="timeline"></div>
+  <div id="transport">
+    <button id="back" title="One line back (←)" aria-label="One line back"><svg viewBox="0 0 24 24"><path d="M6 5v14M19 5 9 12l10 7z"/></svg></button>
+    <button id="play" title="Play / Pause (space)">▶<span>Play</span></button>
+    <button id="fwd" title="One line forward (→)" aria-label="One line forward"><svg viewBox="0 0 24 24"><path d="M18 5v14M5 5l10 7-10 7z"/></svg></button>
+    <span class="sep"></span>
+    <button id="slower" title="Slower (−)" aria-label="Slower">−</button>
+    <span id="speed" title="Reading speed">1×</span>
+    <button id="faster" title="Faster (+)" aria-label="Faster">+</button>
+  </div>
   <button id="snd" aria-label="Sound on or off"><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></button>
 </div>
 
-<div id="hint" class="gone"><div class="mouse"><div class="wheel"></div></div><div>Scroll to fly. Scroll back to rewind time.<br>Or press Play (space bar) and let it fly.</div></div>
+<div id="hint" class="gone"><div class="mouse"><div class="wheel"></div></div><div>Scroll to fly. Scroll back to rewind time.<br>Or press Play below and let it fly.</div></div>
 
 <div id="credits">
   <img src="cover.jpg" alt="The Camera Between Us, cover by Neil Weisbrod">

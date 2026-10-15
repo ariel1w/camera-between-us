@@ -303,13 +303,38 @@ addEventListener('pointermove', e => { mouseX = e.clientX / innerWidth - 0.5; mo
 addEventListener('keydown', e => {
   if (!started) return;
   if (e.code === 'Space') { e.preventDefault(); setAuto(!auto); return; }
+  if (e.code === 'ArrowRight') { e.preventDefault(); step(1); return; }
+  if (e.code === 'ArrowLeft') { e.preventDefault(); step(-1); return; }
+  if (e.key === '+' || e.key === '=') { setSpeed(speedIdx + 1); return; }
+  if (e.key === '-' || e.key === '_') { setSpeed(speedIdx - 1); return; }
   if (flying) flying = null; if (auto) setAuto(false); $('#hint').classList.add('gone');
 });
 function setAuto(on) {
   auto = on; autoY = scrollY; flying = null;
   $('#hint').classList.add('gone');
   $('#play').classList.toggle('on', on);
-  $('#play').textContent = on ? '❚❚ PAUSE' : '▶ PLAY';
+  $('#play').innerHTML = on ? '❚❚<span>Pause</span>' : '▶<span>Play</span>';
+}
+// one line back or forward; Play keeps going from the new line
+function step(dir) {
+  if (!started) return;
+  flying = null;
+  const cur = slotAt(scrollY / UNIT + 0.001);
+  let j = cur + dir;
+  if (dir < 0 && (scrollY / UNIT - slots[cur].start) > slots[cur].len * 0.6) j = cur; // replay this line if well into it
+  j = Math.max(0, Math.min(slots.length - 1, j));
+  const target = (slots[j].start + slots[j].len * 0.2) * UNIT;
+  window.scrollTo(0, target); autoY = target;
+  $('#hint').classList.add('gone');
+}
+// playback speed for Play
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+let speedIdx = 2;
+try { const v = parseInt(localStorage.getItem('cbu-speed'), 10); if (v >= 0 && v < SPEEDS.length) speedIdx = v; } catch (e) {}
+function setSpeed(i) {
+  speedIdx = Math.max(0, Math.min(SPEEDS.length - 1, i));
+  $('#speed').textContent = SPEEDS[speedIdx] + '×';
+  try { localStorage.setItem('cbu-speed', speedIdx); } catch (e) {}
 }
 
 function flyTo(target) {
@@ -373,7 +398,7 @@ function frame(now) {
   if (auto && started) {
     const cur = slots[slotAt(autoY / UNIT)];
     if (cur.kind === 'credits' && autoY / UNIT > cur.start + 4) setAuto(false);
-    else { autoY += cur.len / cur.dur * dt * UNIT; window.scrollTo(0, autoY); }
+    else { autoY += cur.len / cur.dur * SPEEDS[speedIdx] * dt * UNIT; window.scrollTo(0, autoY); }
   }
   const target = scrollY / UNIT;
   pos += (target - pos) * (1 - Math.exp(-dt * 6.5));
@@ -613,6 +638,11 @@ $('#begin').onclick = async () => {
 $('#snd').onclick = () => { score.setMuted(!score.muted); $('#snd').classList.toggle('off', score.muted); };
 $('#rewind').onclick = () => { setAuto(false); flyTo(0); };
 $('#play').onclick = () => setAuto(!auto);
+$('#back').onclick = () => step(-1);
+$('#fwd').onclick = () => step(1);
+$('#slower').onclick = () => setSpeed(speedIdx - 1);
+$('#faster').onclick = () => setSpeed(speedIdx + 1);
+setSpeed(speedIdx);
 applyQuality();
 window.cbu = { get q() { return qLevel; }, flyTo, slots, secInfo, UNIT, score, get pos() { return pos; } };
 requestAnimationFrame(frame);

@@ -62,9 +62,17 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .rec { width: 8px; height: 8px; border-radius: 50%; background: #ff3b3b; box-shadow: 0 0 10px #ff3b3b; animation: rec 1.4s steps(2) infinite; }
 @keyframes rec { 50% { opacity: .15; } }
 #spd { color: var(--ivory); text-align: right; }
-#play { pointer-events: auto; font-family: var(--mono); font-size: 11px; letter-spacing: .16em; color: var(--ivory); padding: 6px 12px;
-  border: 1px solid rgba(244,232,207,.35); transition: border-color .3s, box-shadow .3s, color .3s; }
-#play:hover, #play.on { border-color: var(--gold); color: var(--gold2); box-shadow: 0 0 16px rgba(216,178,106,.3); }
+#transport { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; pointer-events: auto;
+  padding: 5px 8px; border: 1px solid rgba(244,232,207,.18); border-radius: 30px; background: rgba(2,1,7,.55); backdrop-filter: blur(6px); }
+#transport button { height: 34px; min-width: 34px; border-radius: 17px; color: var(--ivory); font-family: var(--mono); font-size: 12px; letter-spacing: .12em;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: background .2s, color .2s; }
+#transport button:hover { background: rgba(216,178,106,.14); color: var(--gold2); }
+#transport svg { width: 15px; height: 15px; fill: currentColor; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+#play { padding: 0 16px; border: 1px solid rgba(216,178,106,.55) !important; text-transform: uppercase; }
+#play.on { color: var(--gold2); box-shadow: 0 0 16px rgba(216,178,106,.3); }
+#transport .sep { width: 1px; height: 18px; background: rgba(244,232,207,.2); margin: 0 6px; }
+#slower, #faster { font-size: 17px !important; }
+#speed { font-family: var(--mono); font-size: 12px; color: var(--gold2); min-width: 40px; text-align: center; letter-spacing: .06em; }
 #spd.rev { color: #7fd0ff; text-shadow: 0 0 10px rgba(127,208,255,.7); }
 #timeline { position: absolute; right: 26px; top: 90px; bottom: 90px; width: 20px; pointer-events: auto; }
 #timeline::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: rgba(244,232,207,.18); }
@@ -102,7 +110,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 #wave .ends { display: flex; justify-content: space-between; margin-top: 8px; text-transform: uppercase; }
 #wave .val { margin-top: 6px; color: var(--ivory); }
 
-#hint { position: fixed; left: 50%; bottom: 30px; line-height: 1.8; transform: translateX(-50%); display: flex; gap: 14px; align-items: center; font-family: var(--mono);
+#hint { position: fixed; left: 50%; bottom: 84px; line-height: 1.8; transform: translateX(-50%); display: flex; gap: 14px; align-items: center; font-family: var(--mono);
   font-size: 11px; letter-spacing: .16em; color: var(--dim); transition: opacity 1.2s; pointer-events: none; text-transform: uppercase; }
 #hint.gone { opacity: 0; }
 .mouse { width: 18px; height: 28px; border: 1px solid var(--dim); border-radius: 9px; position: relative; }
@@ -149,4 +157,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   #credits img { height: 44vh; max-width: 80vw; }
   .ctext { max-width: 100%; }
   #choice button { font-size: 10.5px; padding: 7px 10px; }
+  #transport { bottom: 14px; gap: 2px; padding: 4px 6px; }
+  #play span { display: none; }
+  #play { padding: 0 12px; }
+  #snd { bottom: 70px; right: 28px; }
 }

@@ -274,6 +274,7 @@ export class Score {
     let best = regs[0]; for (const r of regs) if (Math.abs(midi - r[0]) < Math.abs(midi - best[0])) best = r;
     const name = best[1] + (this.dir < 0 ? 'R' : '');
     this.play(name, { rate: Math.pow(2, (midi - best[0]) / 12) * this.tape, gain, at, inst: true, pos: [pan * 2.5, 0.3, -1.2] });
+    if (this.onNote) { const ms = Math.max(0, (at - this.ctx.currentTime) * 1000); setTimeout(() => this.onNote(gain, midi < 50), ms); }
   }
 
   // a swell that blooms and dies away: never held

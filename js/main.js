@@ -3,9 +3,9 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SECTIONS } from './content.js?v=8';
-import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=8';
-import { Score } from './audio.js?v=8';
+import { SECTIONS } from './content.js?v=9';
+import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=9';
+import { Score } from './audio.js?v=9';
 
 const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 600;
@@ -287,7 +287,7 @@ const els = slots.map((s, k) => {
       const inner = ln.s === 'L'
         ? [...w].map(ch => { const dx = ((Math.random() - 0.5) * 50).toFixed(0), dy = ((Math.random() - 0.5) * 36).toFixed(0), dl = (Math.random() * 0.22).toFixed(2); return `<span class="ch" style="--dx:${dx}px;--dy:${dy}px;--dl:${dl}s">${ch}</span>`; }).join('')
         : w;
-      return `<span class="w${cls}" style="--i:${i}">${inner}</span>`;
+      return `<span class="w${cls}" style="--i:${i};--d:${Math.min(i * 0.035, 0.55).toFixed(3)}s">${inner}</span>`;
     };
     html += `<div class="tx">${ln.t.split(' ').map(wordHtml).join(' ')}</div>`;
     d.innerHTML = html;
@@ -345,6 +345,9 @@ let pos = 0, prevPos = 0, vel = 0, flow = 0, t0 = performance.now(), last = t0;
 let started = false, intro = 0, burst = 0, apertureOpen = 0, introT = -1, flash = 0;
 let mouseX = 0, mouseY = 0, flying = null, lastSlot = -1, expo = 1, auto = false, autoY = 0, lastMove = 0;
 const score = new Score();
+// the picture breathes with the music: every note sends a pulse of light
+let pulse = 0, camKick = 0, warpKick = 0, shutNow = 0;
+score.onNote = (gain, bass) => { pulse = Math.min(1, pulse + gain * (bass ? 1.6 : 0.9)); };
 const tmpV = new THREE.Vector3();
 
 addEventListener('pointermove', e => { mouseX = e.clientX / innerWidth - 0.5; mouseY = e.clientY / innerHeight - 0.5; });
@@ -470,8 +473,9 @@ function frame(now) {
   for (const key in info.cueIdx) q[key] = lp - info.cueIdx[key];
 
   // the epilogue shutter: closes on "never freezing time", breaks on "cannot be frozen"
-  let shut = 0;
+  let shut = 0; shutNow = 0;
   if (si === 15 && started) shut = sst(0, 1.4, q.never) * (1 - sst(0, 0.18, q.cannot));
+  shutNow = shut;
   const freeze = shut > 0.55 ? 1 : 0;
   flow += (vel * 1.0 + 0.28) * dt * (1 - shut * 0.97);
 
@@ -534,17 +538,18 @@ function frame(now) {
     }
     if (n > 10) { mx /= n; my /= n; const spread = m2 / n - mx * mx - my * my; expo += (Math.min(1, Math.max(0.2, spread / 24)) - expo) * Math.min(1, dt * 2.5); }
   }
-  pMat.uniforms.uExp.value = (started ? 1 : 0.35 + intro * 0.5 + burst * 0.5) * expo * (bloom.enabled ? 1 : 1.6);
+  pMat.uniforms.uExp.value = (started ? 1 + pulse * 0.32 : 0.35 + intro * 0.5 + burst * 0.5) * expo * (bloom.enabled ? 1 : 1.6);
 
   // warp streaks
-  const wOp = Math.min(0.85, Math.max(0, av - 2.5) / 10);
+  const wOp = started ? Math.min(0.9, 0.16 + Math.max(0, av - 2.5) / 10 + warpKick * 0.8) : 0;
   wMat.opacity = wOp;
   if (wOp > 0) {
-    const len = 0.4 + av * 0.5, dz = vel * dt * 7;
+    const cruise = shutNow > 0.5 ? 0 : 0.9;
+    const len = 0.5 + av * 0.5 + warpKick * 7, dz = (vel + cruise + warpKick * 16) * dt * 7;
     for (let i = 0; i < WS; i++) {
       const d = wData[i]; d[2] += dz;
       if (d[2] > 14) d[2] -= 134; if (d[2] < -120) d[2] += 134;
-      const o = i * 6, l = vel >= 0 ? len : -len;
+      const o = i * 6, l = vel + cruise >= 0 ? len : -len;
       wPos[o] = d[0]; wPos[o + 1] = d[1]; wPos[o + 2] = d[2]; wPos[o + 3] = d[0]; wPos[o + 4] = d[1]; wPos[o + 5] = d[2] - l;
     }
     wGeo.attributes.position.needsUpdate = true;
@@ -569,13 +574,21 @@ function frame(now) {
 
   // camera: parallax, speed, and a shake when you really fly
   const shake = Math.max(0, av - 12) * 0.004;
-  camera.position.x += ((mouseX * 1.6) + (Math.random() - 0.5) * shake - camera.position.x) * Math.min(1, dt * 3);
-  camera.position.y += ((0.6 - mouseY * 0.9) + (Math.random() - 0.5) * shake - camera.position.y) * Math.min(1, dt * 3);
-  camera.position.z = (MOBILE && camera.aspect < 1 ? 17 : 14);
-  camera.fov += ((58 + Math.min(av, 30) * 0.75) - camera.fov) * Math.min(1, dt * 4);
+  camKick *= Math.exp(-dt * 1.4); warpKick *= Math.exp(-dt * 1.8); pulse *= Math.exp(-dt * 3.2);
+  const orbitX = Math.sin(flow * 0.013 + 1) * 2.6, orbitY = Math.sin(flow * 0.009) * 0.9;
+  camera.position.x += ((mouseX * 1.6 + orbitX) + (Math.random() - 0.5) * shake - camera.position.x) * Math.min(1, dt * 2.5);
+  camera.position.y += ((0.6 - mouseY * 0.9 + orbitY) + (Math.random() - 0.5) * shake - camera.position.y) * Math.min(1, dt * 2.5);
+  camera.position.z = (MOBILE && camera.aspect < 1 ? 17 : 14) + Math.sin(flow * 0.011) * 1.4 - camKick * 2.6 + warpKick * 1.5;
+  camera.fov += ((58 + Math.min(av, 30) * 0.75 + warpKick * 16 - camKick * 5) - camera.fov) * Math.min(1, dt * 4);
   camera.updateProjectionMatrix();
   camera.lookAt(0, 1, 0);
-  bgStars.rotation.y = flow * 0.0015; bgStars.rotation.x = flow * 0.0007;
+  bgStars.rotation.y = flow * 0.0015 + t * 0.004; bgStars.rotation.x = flow * 0.0007;
+  const sway = shut > 0.5 ? 0 : 1;
+  points.rotation.y = (Math.sin(flow * 0.021) * 0.22 + Math.sin(t * 0.37) * 0.05) * sway;
+  points.rotation.z = Math.sin(flow * 0.017 + 2) * 0.06 * sway;
+  points.rotation.x = Math.sin(t * 0.29 + 1) * 0.04 * sway;
+  const breathe = 1 + pulse * 0.045 + Math.sin(t * 1.3) * 0.008;
+  points.scale.set(breathe, breathe, breathe);
 
   // post
   flash *= Math.exp(-dt * 2.2);
@@ -585,7 +598,7 @@ function frame(now) {
   film.uniforms.uRev.value += (rev - film.uniforms.uRev.value) * Math.min(1, dt * 6);
   film.uniforms.uFlash.value = flash;
   film.uniforms.uDark.value = shut * 0.6;
-  bloom.strength = (0.85 + burst * 0.6 + Math.min(av, 30) * 0.015) * Math.min(1, 2.2 / QUALITY[qLevel].bloom);
+  bloom.strength = (0.85 + burst * 0.6 + Math.min(av, 30) * 0.015 + pulse * 0.35 + camKick * 0.3) * Math.min(1, 2.2 / QUALITY[qLevel].bloom);
 
   composer.render();
 
@@ -614,9 +627,12 @@ function frame(now) {
   $('#wave .knob').style.left = (8 + ir * 84) + '%';
   $('#wave .val').textContent = ir < 0.5 ? 'VISIBLE · 0.55 µm' : 'INFRARED · 3.4 to 22 µm';
 
+  // where is the light on screen? (for placing the words in the dark)
+  if ((frameNo++ & 1) === 0) updateDensity();
   // text
-  renderText(k);
+  renderText(k, si);
 
+  if (lastSlot >= 0 && slot.kind === 'title' && slots[lastSlot] && slots[lastSlot].sec < si) warpKick = 1;
   // events
   if (lastSlot >= 0 && k !== lastSlot && started) {
     for (const ev of EVENTS) if (lastSlot < ev.slot && k >= ev.slot) ev.fn();
@@ -660,30 +676,139 @@ function frame(now) {
   });
 }
 
+// ------------------------------------------------------------ the conversation
+// Neil speaks from the left, Lumen from the right, the picture between them.
+// Each line is placed where the picture is darkest, chosen when it arrives.
+const GW = 18, GH = 12, grid = new Float32Array(GW * GH), gtmp = new Float32Array(GW * GH);
+let frameNo = 0;
+function updateDensity() {
+  gtmp.fill(0);
+  const e = pMat.uniforms.uExp.value;
+  for (let i = 0; i < N; i += 23) {
+    const sz = SIZ[i]; if (sz <= 0.001) continue;
+    tmpV.set(POS[i * 3], POS[i * 3 + 1], POS[i * 3 + 2]).project(camera);
+    if (tmpV.z > 1 || tmpV.x < -1 || tmpV.x > 1 || tmpV.y < -1 || tmpV.y > 1) continue;
+    const gx = Math.min(GW - 1, ((tmpV.x * 0.5 + 0.5) * GW) | 0), gy = Math.min(GH - 1, ((-tmpV.y * 0.5 + 0.5) * GH) | 0);
+    gtmp[gy * GW + gx] += (COL[i * 3] + COL[i * 3 + 1] + COL[i * 3 + 2]) * sz * e;
+  }
+  for (let i = 0; i < grid.length; i++) grid[i] += (gtmp[i] - grid[i]) * 0.35;
+}
+function boxDensity(x0, y0, w, h) {
+  const cx0 = Math.max(0, Math.floor(x0 / innerWidth * GW)), cx1 = Math.min(GW - 1, Math.floor((x0 + w) / innerWidth * GW));
+  const cy0 = Math.max(0, Math.floor(y0 / innerHeight * GH)), cy1 = Math.min(GH - 1, Math.floor((y0 + h) / innerHeight * GH));
+  let sum = 0;
+  for (let y = cy0; y <= cy1; y++) for (let x = cx0; x <= cx1; x++) sum += grid[y * GW + x];
+  return sum / ((cx1 - cx0 + 1) * (cy1 - cy0 + 1));
+}
+const lastY = { N: 0, L: 0 };
+function deckH() { return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--deckH')) || 150; }
+function placeLine(j) {
+  const s = slots[j], el = els[j], W = innerWidth, H = innerHeight, narrow = W < 700;
+  const speaker = s.kind === 'line' ? s.line.s : 'T';
+  const center = s.kind === 'title' || speaker === 'H' || s.hero;
+  const margin = narrow ? 16 : Math.max(110, W * 0.075);
+  const colW = center ? Math.min(W * 0.88, 1000) : narrow ? W - 32 : Math.min(W * 0.42, 640);
+  const left = center ? (W - colW) / 2 : speaker === 'N' ? margin : W - margin - colW;
+  const align = center ? 'center' : speaker === 'N' ? 'left' : 'right';
+  el.style.left = left + 'px'; el.style.width = colW + 'px'; el.style.textAlign = align;
+  el.style.transformOrigin = align === 'left' ? '0% 50%' : align === 'right' ? '100% 50%' : '50% 50%';
+  el.style.display = 'block'; el.style.opacity = '0';
+  const h = el.offsetHeight;
+  const top = 78, bottom = H - deckH() - 18;
+  let best = (top + bottom) / 2;
+  if (s.kind !== 'title') {
+    let bestScore = Infinity;
+    const pref = lastY[speaker] || (top + bottom) * 0.5;
+    for (let k = 0; k <= 8; k++) {
+      const y = top + h / 2 + (bottom - top - h) * (k / 8);
+      if (bottom - top < h) { best = (top + bottom) / 2; break; }
+      const score_ = boxDensity(left, y - h / 2, colW, h) + Math.abs(y - pref) / H * 0.6 + Math.abs(y - (top + bottom) * 0.52) / H * 0.25;
+      if (score_ < bestScore) { bestScore = score_; best = y; }
+    }
+    if (speaker === 'N' || speaker === 'L') lastY[speaker] = best;
+  }
+  el.style.top = best + 'px';
+  el._spot = { y: best, left, colW, align, speaker };
+}
+
 const shown = new Set();
-// Exactly one line on screen at a time: each line arrives (sharpening out of
-// the distance), holds, then flies past and is gone before the next arrives.
-function renderText(k) {
+let lastSpeaker = '', echoJ = -1;
+function renderText(k, si) {
   const lo = Math.max(0, k - 1), hi = Math.min(slots.length, k + 2);
-  for (const j of shown) if (j < lo || j >= hi) { els[j].style.display = 'none'; shown.delete(j); if (els[j]._on) { els[j]._on = false; els[j].classList.remove('on'); } }
+  const keep = new Set();
+  for (let j = lo; j < hi; j++) keep.add(j);
+  if (echoJ >= 0) keep.add(echoJ);
+  for (const j of shown) if (!keep.has(j)) { els[j].style.display = 'none'; shown.delete(j); if (els[j]._on) { els[j]._on = false; els[j].classList.remove('on'); } els[j]._spot = null; }
+  let speakingNow = '';
   for (let j = lo; j < hi; j++) {
     const s = slots[j], el = els[j];
     if (s.kind === 'credits') continue;
     const e = (pos - s.start) / s.len;
     const inside = e >= 0 && e <= 1 && started;
     if (!inside) {
-      if (el.style.display !== 'none') { el.style.display = 'none'; shown.delete(j); }
-      if (el._on) { el._on = false; el.classList.remove('on'); }
+      if (j !== echoJ) {
+        if (el.style.display !== 'none') { el.style.display = 'none'; shown.delete(j); }
+        if (el._on) { el._on = false; el.classList.remove('on'); }
+        el._spot = null;
+      }
       continue;
     }
-    const fin = sst(0, 0.16, e), fout = sst(0.86, 1, e);
-    const op = fin * (1 - fout), sc = 0.9 + 0.1 * fin + 0.28 * fout, bl = (1 - fin) * 6 + fout * 9, y = (1 - fin) * -26 + fout * 22;
-    if (el.style.display !== 'block') { el.style.display = 'block'; shown.add(j); }
+    if (!el._spot) placeLine(j);
+    shown.add(j);
+    const fin = sst(0, 0.14, e), fout = sst(0.86, 1, e);
+    const sp = el._spot, dir = sp.align === 'left' ? -1 : sp.align === 'right' ? 1 : 0;
+    const op = fin * (1 - fout), sc = 0.94 + 0.06 * fin + 0.12 * fout, bl = (1 - fin) * 5 + fout * 7;
+    const x = dir * (1 - fin) * 40 - dir * fout * 30, y = (1 - fin) * 14 - fout * 16;
     el.style.opacity = op.toFixed(3);
-    el.style.transform = `translate(-50%, -50%) translateY(${y.toFixed(1)}px) scale(${sc.toFixed(4)})`;
+    el.style.transform = `translate(${dir === 0 ? 0 : 0}px, -50%) translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${sc.toFixed(4)})`;
     el.style.filter = bl > 0.15 ? `blur(${bl.toFixed(1)}px)` : 'none';
-    if (!el._on) { el._on = true; el.classList.add('on'); if (s.hero && Math.abs(vel) < 6) score.accent(); }
+    if (!el._on) {
+      el._on = true; el.classList.add('on');
+      if (s.hero && Math.abs(vel) < 6) { score.accent(); camKick = 1; }
+      // the voice passes across the screen
+      if (s.kind === 'line' && (s.line.s === 'N' || s.line.s === 'L')) {
+        if (lastSpeaker && lastSpeaker !== s.line.s && Math.abs(vel) < 8) beam(lastSpeaker, s.line.s);
+        // the other voice's last line lingers as an echo
+        const prevJ = j - 1;
+        echoJ = prevJ >= 0 && slots[prevJ].kind === 'line' && slots[prevJ].line.s !== s.line.s && els[prevJ]._spot && !slots[prevJ].hero && !s.hero ? prevJ : -1;
+        lastSpeaker = s.line.s;
+      }
+    }
+    if (s.kind === 'line' && fin > 0.3 && fout < 0.7) speakingNow = s.line.s;
   }
+  // the echo of the other voice, quiet
+  if (echoJ >= 0) {
+    const el = els[echoJ], cur = slots[k];
+    const alive = cur.kind === 'line' && echoJ < k && k - echoJ <= 2;
+    if (!alive || !el._spot) { if (el.style.display !== 'none') el.style.display = 'none'; shown.delete(echoJ); el._spot = null; echoJ = -1; }
+    else {
+      el.style.display = 'block'; shown.add(echoJ);
+      el.style.opacity = '0.22'; el.style.filter = 'none';
+      el.style.transform = 'translate(0px, -50%) scale(0.86)';
+    }
+  }
+  // the two presences
+  orbN.classList.toggle('speaking', speakingNow === 'N'); orbL.classList.toggle('speaking', speakingNow === 'L');
+  const showOrbs = started && slots[k].kind === 'line';
+  orbN.classList.toggle('on', showOrbs); orbL.classList.toggle('on', showOrbs);
+  if (lastY.N) orbN.style.top = lastY.N + 'px';
+  if (lastY.L) orbL.style.top = lastY.L + 'px';
+  const p = 1 + pulse * 0.28;
+  orbN.style.setProperty('--p', speakingNow === 'N' ? p : 1); orbL.style.setProperty('--p', speakingNow === 'L' ? p : 1);
+}
+const orbN = $('#orbN'), orbL = $('#orbL'), beamEl = $('#beam');
+function beam(from, to) {
+  const r1 = (from === 'N' ? orbN : orbL).getBoundingClientRect(), r2 = (to === 'N' ? orbN : orbL).getBoundingClientRect();
+  const x1 = r1.left + r1.width / 2, y1 = r1.top + r1.height / 2, x2 = r2.left + r2.width / 2, y2 = r2.top + r2.height / 2;
+  const len = Math.hypot(x2 - x1, y2 - y1), ang = Math.atan2(y2 - y1, x2 - x1);
+  beamEl.className = 'to' + to;
+  beamEl.animate([
+    { transform: `translate(${x1}px, ${y1}px) rotate(${ang}rad) scaleX(0.05)`, opacity: 0 },
+    { transform: `translate(${x1}px, ${y1}px) rotate(${ang}rad) scaleX(${len / 400 * 0.5})`, opacity: 1, offset: 0.35 },
+    { transform: `translate(${x1 + (x2 - x1) * 0.5}px, ${y1 + (y2 - y1) * 0.5}px) rotate(${ang}rad) scaleX(${len / 400 * 0.5})`, opacity: 0.9, offset: 0.7 },
+    { transform: `translate(${x2}px, ${y2}px) rotate(${ang}rad) scaleX(0.05)`, opacity: 0 },
+  ], { duration: 950, easing: 'cubic-bezier(.4,0,.2,1)' });
+  score.play('swell', { rate: to === 'L' ? 1.8 : 1.4, gain: 0.12, verb: 0.6 });
 }
 
 // ------------------------------------------------------------ start

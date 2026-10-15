@@ -142,16 +142,38 @@ SCENES.push({
     },
     // 1 LUMEN in light
     (i, c) => {
-      if (i < N * 0.55) wordAt(i, c, S.wLumen, 0, 1.6, 0.6, 0.85, 1.1);
-      else dust(i, c, 0.7);
+      if (i < N * 0.7) {
+        wordAt(i,c,S.wLumen,0,1.6,0.6,0.9,1.2,0.018);
+        const age = c.q.word2 >= 0 ? c.q.word2 : c.q.lumen;
+        const arrival = sst(R1[i]*1.3,1.8+R1[i]*1.3,age);
+        const flight = 1-arrival, lane = Math.floor(R2[i]*180);
+        O[0] += Math.sin(lane*2.4)*flight*3;
+        O[1] += Math.cos(lane*1.7)*flight*2;
+        O[2] -= flight*(25+R3[i]*45);
+        const glint=Math.pow(Math.max(0,Math.cos(O[0]*0.7-c.f*1.8)),20)*(0.3+(c.treble||0));
+        O[3]+=glint; O[4]+=glint; O[5]+=glint;
+        O[6]+=flight*0.4+glint*0.5;
+      } else {
+        const lane=i%180, tail=Math.floor(i/180)%12;
+        const travel=fract(lane*0.618+c.f*0.22), fade=Math.sin(travel*Math.PI);
+        const a=lane*2.4, radius=2+fract(lane*0.37)*5;
+        set(Math.cos(a)*radius,1.6+Math.sin(a)*radius*0.5,-65+travel*76-tail*0.22,
+          0.5*fade,0.8*fade,1.2*fade,(1-tail/12)*fade);
+      }
     },
     // 2 a beam of light travelling into the camera
     (i, c) => {
-      if (i < N * 0.6) {
-        const z = -46 + fract(R1[i] + c.f * 0.05) * 58, a = R2[i] * TAU, rr = Math.sqrt(R3[i]) * (0.6 + Math.max(0, z + 46) * 0.02);
-        const near = sst(-46, 12, z);
-        set(Math.cos(a) * rr, Math.sin(a) * rr + 1.2, z, 0.8 + near * 0.2, 0.75 + near * 0.15, 0.55 + near * 0.3, 0.6 + near * 1.4);
-      } else dust(i, c, 0.6);
+      if(i<N*0.18) lensAt(i,c,1.05,0,1.2,0,0.8+(c.bass||0)*0.1);
+      else {
+        const lane=i%360, tail=Math.floor(i/360)%24;
+        const seed=fract(lane*0.6180339), a=lane*2.39996;
+        const p=fract(seed+c.f*0.32), z=-75+p*87-tail*0.16;
+        const radius=(0.08+fract(lane*0.37)*0.65)*(1+Math.abs(z)*0.014);
+        const fade=sst(0,0.08,p)*(1-sst(0.94,1,p))*Math.exp(-tail*0.14);
+        const flash=Math.exp(-z*z*2)*(0.5+(c.treble||0));
+        set(Math.cos(a)*radius,1.2+Math.sin(a)*radius,z,
+          (0.7+flash)*fade,(0.9+flash)*fade,(1.25+flash)*fade,(tail===0?1.5:0.75)*fade);
+      }
     },
     // 3 two voices
     (i, c) => {
@@ -445,9 +467,14 @@ export const SKY_LABELS = [
   { k: 0.72, text: 'Andromeda Galaxy · 2.5 million years ago' },
   { k: 0.97, text: 'The most distant galaxies · over 13 billion years ago' },
 ];
+function skyDistance(k, sep) {
+  const shell=Math.min(4,Math.floor(k*5));
+  const distances=[8,21,39,65,100];
+  return mix(34,distances[shell]+(fract(k*5)-0.5)*1.5,sep);
+}
 function skyPoint(i, c, sep) {
   const a = (R1[i] - 0.5) * 2.4, b = (R2[i] - 0.5) * 1.3 + Math.sin(a * 1.4) * 0.25 * (R4[i] < 0.4 ? 1 : 0);
-  const dist = mix(34, 6 + Math.pow(R3[i], 0.8) * 90, sep);
+  const dist = skyDistance(R3[i],sep);
   const x = Math.sin(a) * dist, y = Math.sin(b) * dist + 1, z = -Math.cos(a) * dist * Math.cos(b) + 10;
   set(x, y, z, 0, 0, 0, 0);
   if (sep > 0) { O[2] -= 10; rotY(sep * 1.05); O[2] += 10 - sep * 6; O[0] += sep * 4; }
@@ -457,7 +484,14 @@ function skyPoint(i, c, sep) {
   const mag = Math.pow(R2[i] * 0.999 + 0.001, 6);
   const tw = 0.75 + 0.25 * Math.sin(c.t * (2 + R1[i] * 5) + i);
   O[6] = (0.5 + mag * 6) * tw * (1 + sep * 0.6);
-  const lum = 0.35 + mag * 2;
+  const shell=Math.min(4,Math.floor(R3[i]*5));
+  const packet=Math.pow(Math.max(0,Math.cos(dist*0.17-c.f*2.2)),28)*sep;
+  const gather=c.q.gathers>=0 ? Math.exp(-Math.pow((c.q.gathers-0.65)/0.4,2)) : 0;
+  const lum = 0.35 + mag * 2 + packet*(0.3+(c.treble||0)) + gather*0.85;
+  O[3]=mix(O[3],0.95-shell*0.13,sep*0.55);
+  O[4]=mix(O[4],0.76-shell*0.06,sep*0.55);
+  O[5]=mix(O[5],0.4+shell*0.18,sep*0.55);
+  O[6]+=packet*0.7+gather*0.8;
   O[3] *= lum; O[4] *= lum; O[5] *= lum;
 }
 SCENES.push({
@@ -468,7 +502,7 @@ SCENES.push({
   states: [(i, c) => skyPoint(i, c, 0), (i, c) => skyPoint(i, c, 1)],
 });
 export function skyAnchor(c, k, sep, out) {
-  const a = -0.35 + k * 0.7, b = 0.32 - k * 0.42, dist = mix(34, 6 + Math.pow(k, 0.8) * 90, sep);
+  const a = -0.35 + k * 0.7, b = 0.32 - k * 0.42, dist = skyDistance(k,sep);
   let x = Math.sin(a) * dist, y = Math.sin(b) * dist + 1, z = -Math.cos(a) * dist * Math.cos(b) + 10;
   O[0] = x; O[1] = y; O[2] = z;
   if (sep > 0) { O[2] -= 10; rotY(sep * 1.05); O[2] += 10 - sep * 6; O[0] += sep * 4; }
@@ -659,11 +693,18 @@ function network(i, c, ripple, glow) {
   const dist = Math.abs(baseZ), reach = ripple * 16;
   const infl = main ? 0 : sst(reach, reach - 5, dist) * Math.exp(-Math.pow((x - 2) / 9, 2));
   z = mix(z, z * 0.25 + Math.sin(x * 0.5 + line) * 0.6, infl);
-  const pulse = Math.pow(Math.max(0, Math.sin((t * 5 - c.f * 0.05 + line * 0.13) * TAU)), 16) * glow;
+  // Retarded distance makes the changed path send a wave across other lives.
+  const distance=Math.hypot((x-2)*0.8,baseZ);
+  const age=c.q.delay>=0 ? c.q.delay : Math.max(0,c.q.network||0);
+  const front=age*2.8;
+  const first=Math.exp(-Math.pow((distance-front)/0.85,2));
+  const recurrent=Math.pow(Math.max(0,Math.cos(distance*0.85-c.f*1.7)),28);
+  const pulse=(first*1.4+recurrent*(0.3+(c.bass||0)*0.9))*glow;
+  const along=Math.pow(Math.max(0,Math.cos(Math.abs(x-2)*0.9-dist*0.35-c.f*2)),22)*infl*(c.treble||0);
   let r = 0.3, g = 0.4, b = 0.75, s = 0.5;
   if (main) { r = 1; g = 0.8; b = 0.45; s = 0.9; }
   else if (infl > 0.1) { r = mix(r, 0.95, infl); g = mix(g, 0.7, infl); b = mix(b, 0.55, infl); s += infl * 0.4; }
-  set(x, 0, z, r + pulse, g + pulse, b + pulse, s + pulse * 1.5);
+  set(x, pulse*(c.bass||0)*0.08, z, r + pulse + along, g + pulse*0.85 + along, b + pulse*0.55 + along, s + pulse * 1.1 + along*0.5);
   rotX(-1.05); O[1] -= 0.5;
 }
 SCENES.push({
@@ -864,10 +905,17 @@ function between(i, c, mode, stream) {
   const q = R1[i];
   if (q < 0.18) { lensAt(i, c, 1, 0, 1.3, 0, 0.8); return; }
   if (q < 0.18 + 0.25 * stream) { // thought travelling through the lens, both directions
-    const dir = R2[i] < 0.5 ? 1 : -1, t = fract(R3[i] + c.f * 0.04 * dir);
-    const x = (t - 0.5) * 15 * c.sx, pinch = 1 - Math.exp(-x * x * 0.4);
-    const a = R4[i] * TAU;
-    set(x, 1.3 + Math.sin(a) * (0.15 + pinch * 1.6), Math.cos(a) * (0.15 + pinch * 1.6), dir > 0 ? 1 : 0.4, dir > 0 ? 0.75 : 0.75, dir > 0 ? 0.4 : 1, 0.5 + (1 - pinch) * 0.9);
+    const dir=R2[i]<0.5?1:-1, lane=i%240, tail=Math.floor(i/240)%12;
+    const p=fract(lane*0.6180339+c.f*0.16*dir-tail*0.0018*dir);
+    const x=(p-0.5)*15*c.sx, pinch=1-Math.exp(-x*x*0.4);
+    const a=lane*2.39996+c.f*0.5*dir;
+    const radius=0.1+pinch*(0.45+fract(lane*0.37)*1.1);
+    const packet=Math.pow(Math.max(0,Math.cos(p*TAU*3-c.f*dir)),12);
+    const lum=(0.5+packet*(0.8+(c.treble||0)))*Math.exp(-tail*0.13);
+    const through=Math.exp(-x*x*3)*(0.3+(c.treble||0));
+    set(x,1.3+Math.sin(a)*radius,Math.cos(a)*radius,
+      (dir>0?1.15:0.32)*lum+through,(dir>0?0.76:0.8)*lum+through,(dir>0?0.32:1.25)*lum+through,
+      (0.65+packet*0.6+through)*Math.exp(-tail*0.08));
     return;
   }
   const left = R2[i] < 0.5;
@@ -931,6 +979,23 @@ SCENES.push({
   ],
 });
 
+function finaleGalaxy(i,c,scale,depth) {
+  galaxyAt(i,c,scale,0,1.1,depth,0.94,c.f*0.027,1);
+  const tag=S.galaxy.tags[i%S.galaxy.tags.length];
+  const k=(i%(S.galaxy.pts.length/3))*3;
+  const radius=Math.hypot(S.galaxy.pts[k],S.galaxy.pts[k+2]);
+  const wave=Math.pow(Math.max(0,Math.cos(radius*2-c.f*1.5)),22);
+  const sparkle=wave*(0.15+(c.treble||0)*0.65);
+  if(tag===1) { O[3]=1.45; O[4]=0.98; O[5]=0.43; O[6]*=1.15; }
+  else {
+    const gold=Math.exp(-radius*0.65);
+    O[3]=0.48+gold*0.75+sparkle; O[4]=0.25+gold*0.48+sparkle*0.8; O[5]=1.05-gold*0.6+sparkle;
+  }
+  const pressure=1+(c.bass||0)*wave*0.022;
+  O[0]*=pressure; O[1]=1.1+(O[1]-1.1)*pressure;
+  O[6]+=sparkle*0.5;
+}
+
 // ---------- Epilogue: Everything Is Always Changing
 SCENES.push({
   cues: { matters: 'Perhaps that is ultimately why the camera matters.', never: 'So perhaps the camera was never freezing time.', cannot: 'It was showing us that time cannot be frozen.', question: 'Then the question with which I would like to continue', standing: 'Standing between Neil and Lumen is still the camera.', beginning: 'The beginning of the question.' },
@@ -938,8 +1003,11 @@ SCENES.push({
   mood: 15,
   shutter: true,
   states: [
-    (i, c) => galaxyAt(i, c, 1.45, 0, 0.8, -2, 0.95, c.f * 0.03),
-    (i, c) => { if (i < N * 0.25) lensAt(i, c, 1.5, 0, 0.8, 1, 0.9); else galaxyAt(i, c, 1.45, 0, 0.8, -3, 0.95, c.f * 0.03); },
+    (i, c) => finaleGalaxy(i,c,1.65,-3),
+    (i,c) => {
+      if(i<N*0.24) { lensAt(i,c,1.35,0,1.1,1,0.82+(c.bass||0)*0.12,1); O[3]*=1.2; O[4]*=1.15; }
+      else finaleGalaxy(i,c,1.85,-5);
+    },
     (i, c) => { // time cannot be frozen: everything bursts back into motion
       const onset=sst(0,2.5,c.q.cannot), lane=i%800, tail=Math.floor(i/800);
       const a=fract(Math.sin(lane*12.9898)*43758.5)*TAU;
@@ -955,16 +1023,20 @@ SCENES.push({
         ((warm?1.2:0.45)+glint)*fade,((warm?0.8:0.75)+glint)*fade,((warm?0.4:1.25)+glint)*fade,
         (tail===0?1.4:0.75)*fade);
     },
-    (i, c) => deepField(i, c, 0.15, 2),
-    (i, c) => { // callback to the prologue: two voices and the camera between
-      if (i < N * 0.2) lensAt(i, c, 0.85, 0, 1.4, 0, 0.75);
-      else if (i < N * 0.7) {
-        const left = i % 2 === 0, cx = left ? -6 * c.sx : 6 * c.sx;
-        if (left) galaxyAt(i, c, 0.42, cx, 1.4, 0, 1.1, c.f * 0.05, 0);
-        else { fromShape(S.attractor, i, 0.55, 0, 0, 0); rotY(c.f * 0.05); O[0] += cx; O[1] += 1.4; O[3] = 0.35; O[4] = 0.75; O[5] = 1; O[6] = 0.6; }
-      } else dust(i, c, 0.7);
+    (i,c) => {
+      deepField(i,c,0.2,2.6);
+      const bloom=1+0.25*sst(0,4,c.q.question);
+      O[3]*=bloom; O[4]*=bloom; O[5]*=bloom; O[6]*=1.1;
     },
-    (i, c) => galaxyAt(i, c, 1.9, 0, 1.4, -4, 1.05, c.f * 0.03),
+    (i,c) => {
+      // Two voices continue exchanging light inside the larger cosmos.
+      if(R1[i]<0.76) between(i,c,2,1);
+      else { finaleGalaxy(i,c,2.3,-12); O[3]*=0.55; O[4]*=0.55; O[5]*=0.65; }
+    },
+    (i,c) => {
+      const grow=sst(0,8,c.q.beginning);
+      finaleGalaxy(i,c,2.8+grow*0.65,-8-grow*2);
+    },
   ],
 });
 

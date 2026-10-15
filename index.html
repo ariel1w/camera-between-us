@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Camera Between Us</title>
+<meta name="description" content="A flight through time: a conversation between Neil and Lumen about time, matter, intelligence and the universe.">
+<meta property="og:title" content="The Camera Between Us">
+<meta property="og:description" content="A conversation between Neil and Lumen about time, matter, intelligence and the universe. Best experienced on a computer screen, with headphones.">
+<meta property="og:image" content="cover.jpg">
+<meta name="theme-color" content="#020107">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%23020107' stroke='%23d8b26a' stroke-width='4'/%3E%3Cpolygon points='32,14 47,23 47,41 32,50 17,41 17,23' fill='none' stroke='%23d8b26a' stroke-width='3'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400;1,600&family=Outfit:wght@200;300;400&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="shade"></div>
+<div id="lines"></div>
+<div id="labels"></div>
+
+<div id="choice">
+  <button id="c-umb">☂ Go back for the umbrella</button>
+  <button id="c-walk">Keep walking</button>
+</div>
+
+<div id="wave"><div class="bar"><div class="knob"></div></div><div class="ends"><span>visible</span><span>infrared</span></div><div class="val"></div></div>
+
+<div id="hud">
+  <div class="vf tl"></div><div class="vf tr"></div><div class="vf bl"></div><div class="vf br"></div>
+  <div id="hud-tl"><div class="mark">THE CAMERA BETWEEN US</div><div id="sec"></div></div>
+  <div id="hud-tr"><span class="rec"></span><span id="tc">00:00:00:00</span><span id="spd"></span><button id="play">▶ PLAY</button></div>
+  <div id="timeline"></div>
+  <button id="snd" aria-label="Sound on or off"><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></button>
+</div>
+
+<div id="hint" class="gone"><div class="mouse"><div class="wheel"></div></div><div>Scroll to fly. Scroll back to rewind time.<br>Or press Play (space bar) and let it fly.</div></div>
+
+<div id="credits">
+  <img src="cover.jpg" alt="The Camera Between Us, cover by Neil Weisbrod">
+  <div class="ctext">
+    <div class="ct">The Camera Between Us</div>
+    <div class="cs">A Conversation Between Neil and Lumen About Time, Matter, Intelligence and the Universe</div>
+    <div class="cb">Conceived and written by Neil Weisbrod<br>Co-Edited by Neil Weisbrod and Lumen<br>© October 13, 2026</div>
+    <button id="rewind">⟲ Rewind time</button>
+    <div class="cm">Flight, light and sound built with Claude Code</div>
+  </div>
+</div>
+
+<div id="gate">
+  <div class="gin">
+    <div class="g-eye"></div>
+    <h1>The Camera Between Us</h1>
+    <p class="g-sub">A Conversation Between Neil and Lumen About Time, Matter, Intelligence and the Universe</p>
+    <p class="g-note">Best experienced on a computer screen.<br>Put on headphones.</p>
+    <button id="begin" disabled>Preparing…</button>
+  </div>
+</div>
+
+<div id="track"></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

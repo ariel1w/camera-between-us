@@ -238,26 +238,40 @@ SCENES.push({
       else { O[0] += Math.sin(c.t + R4[i] * 40) * 0.3; O[1] += Math.sin(c.f * 0.3 + R4[i] * 20) * 0.4; O[3] = 1; O[4] = 0.85; O[5] = 0.5; O[6] = 0.6 * bloom; }
     },
     (i, c) => {
+      // the mountain as glowing contour lines: a living topographic map in time-lapse
       const q = c.q;
       const rise = sst(0, 2, q.forms) * 0.4 + sst(0, 2, q.rises) * 0.6;
       const frac = sst(0, 1, q.fractures), erode = sst(0, 2, q.erodes), trans = sst(0, 2.5, q.transformed);
-      const x = (R1[i] - 0.5) * 22 * c.sx, z = (R2[i] - 0.5) * 12;
-      const ridge = Math.abs(Math.sin(x * 0.8 + z * 0.4) * Math.cos(z * 0.7 - x * 0.3));
-      const d2 = (x * x) / 30 + (z * z) / 14;
-      let h = 6.5 * Math.exp(-d2) * (0.55 + 0.45 * ridge) + 0.35 * Math.sin(x * 2.1 + z * 1.7) * Math.exp(-d2 * 0.5);
-      h *= 1 + 0.04 * Math.sin(c.f * 0.7 + x); // never motionless
-      let y = h * rise * (1 - 0.65 * erode) - 3.2;
+      const x = (R1[i] - 0.5) * 24 * c.sx, z = (R2[i] - 0.5) * 14;
+      const H = (xx, zz) => {
+        const ridge = Math.abs(Math.sin(xx * 0.8 + zz * 0.4) * Math.cos(zz * 0.7 - xx * 0.3));
+        const d2 = (xx * xx) / 26 + (zz * zz) / 12;
+        return 6.8 * Math.exp(-d2) * (0.55 + 0.45 * ridge) + 2.2 * Math.exp(-((xx - 6) * (xx - 6) / 8 + (zz + 2) * (zz + 2) / 6)) + 1.8 * Math.exp(-((xx + 7) * (xx + 7) / 10 + (zz - 1) * (zz - 1) / 5)) + 0.3 * Math.sin(xx * 2.1 + zz * 1.7) * Math.exp(-d2 * 0.5);
+      };
+      let h = H(x, z) * (1 + 0.04 * Math.sin(c.f * 0.7 + x)); // never motionless
+      const hh = h * rise * (1 - 0.65 * erode);
+      // snap most particles onto contour lines
+      const onLine = R3[i] < 0.78;
+      const levels = 14, lv = hh / 7 * levels;
+      let y = onLine ? (Math.round(lv) / levels) * 7 : hh;
+      const dist = Math.abs(lv - Math.round(lv));
+      if (onLine && dist > 0.18) y = hh; // between lines: faint surface
+      y -= 3.4;
       let ox = x, oz = z;
-      if (frac > 0) { const crack = Math.sin(x * 3.1) * Math.sin(z * 2.3) > 0.6 ? 1 : 0; ox += crack * frac * 0.4 * Math.sign(x); y -= crack * frac * 0.5; }
-      if (erode > 0) { ox += x * erode * 0.25 * R3[i]; oz += z * erode * 0.25 * R4[i]; }
-      if (trans > 0) { y = mix(y, y + 4 + R3[i] * 9 + Math.sin(c.f * 0.2 + R4[i] * 9) * 2, trans * R1[i]); }
-      set(ox, y, oz, 0, 0, 0, 0.65 + R3[i] * 0.5);
-      rotX(0.42);
-      const hn = h * rise / 6.5;
-      if (hn > 0.72 && erode < 0.5) { O[3] = 0.9; O[4] = 0.92; O[5] = 1; }
-      else if (hn > 0.25) { O[3] = 0.55; O[4] = 0.38; O[5] = 0.3; }
-      else { O[3] = 0.22; O[4] = 0.2; O[5] = 0.45; }
-      if (trans > 0) { O[3] = mix(O[3], 0.7, trans); O[4] = mix(O[4], 0.55, trans); O[5] = mix(O[5], 0.8, trans); }
+      if (frac > 0) { const crack = Math.sin(x * 3.1) * Math.sin(z * 2.3) > 0.6 ? 1 : 0; ox += crack * frac * 0.5 * Math.sign(x); y -= crack * frac * 0.6; }
+      if (erode > 0) { ox += x * erode * 0.22 * R3[i]; oz += z * erode * 0.22 * R4[i]; }
+      if (trans > 0) y = mix(y, y + 4 + R3[i] * 9 + Math.sin(c.f * 0.2 + R4[i] * 9) * 2, trans * R1[i]);
+      const hn = Math.min(1, h * rise / 7), lineK = onLine && dist <= 0.18 ? 1 : 0.28;
+      set(ox, y, oz, 0, 0, 0, (0.45 + R4[i] * 0.4) * (lineK > 0.5 ? 1 : 0.7));
+      rotX(0.32); O[1] += 0.4;
+      // colour climbs from deep blue through violet and gold to white peaks
+      let r, g, b;
+      if (hn < 0.3) { const k = hn / 0.3; r = 0.15 + 0.25 * k; g = 0.2 + 0.1 * k; b = 0.6 + 0.2 * k; }
+      else if (hn < 0.7) { const k = (hn - 0.3) / 0.4; r = 0.4 + 0.55 * k; g = 0.3 + 0.4 * k; b = 0.8 - 0.45 * k; }
+      else { const k = (hn - 0.7) / 0.3; r = 0.95 + 0.05 * k; g = 0.7 + 0.3 * k; b = 0.35 + 0.65 * k; }
+      if (erode > 0.5) { r *= 0.85; g *= 0.85; }
+      if (trans > 0) { r = mix(r, 0.7, trans); g = mix(g, 0.55, trans); b = mix(b, 0.85, trans); }
+      O[3] = r * lineK * 1.2; O[4] = g * lineK * 1.2; O[5] = b * lineK * 1.2;
     },
   ],
 });

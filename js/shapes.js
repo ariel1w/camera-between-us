@@ -72,7 +72,7 @@ export function tree(n, seed = 13) {
   function branch(x, y, z, dx, dy, dz, len, rad, depth) {
     const x2 = x + dx * len, y2 = y + dy * len, z2 = z + dz * len;
     caps.push([x, y, z, x2, y2, z2, rad, 0]);
-    if (depth === 0) { caps.push([x2, y2, z2, x2, y2 + 0.1, z2, 0.42 + r() * 0.2, 1]); return; }
+    if (depth === 0) { caps.push([x2, y2, z2, x2, y2 + 0.1, z2, 0.24 + r() * 0.12, 1]); return; }
     const kids = depth > 3 ? 2 : 2 + (r() < 0.5 ? 1 : 0);
     for (let k = 0; k < kids; k++) {
       let nx = dx + (r() - 0.5) * 1.5, ny = dy + 0.35 + (r() - 0.5) * 0.4, nz = dz + (r() - 0.5) * 1.5;

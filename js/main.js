@@ -6,6 +6,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { SECTIONS } from './content.js?v=9';
 import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=9';
 import { Score } from './audio.js?v=9';
+import { Presence } from './presences.js?v=9';
 
 const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 600;
@@ -706,8 +707,8 @@ function placeLine(j) {
   const s = slots[j], el = els[j], W = innerWidth, H = innerHeight, narrow = W < 700;
   const speaker = s.kind === 'line' ? s.line.s : 'T';
   const center = s.kind === 'title' || speaker === 'H' || s.hero;
-  const margin = narrow ? 16 : Math.max(110, W * 0.075);
-  const colW = center ? Math.min(W * 0.88, 1000) : narrow ? W - 32 : Math.min(W * 0.42, 640);
+  const margin = narrow ? 78 : Math.max(150, W * 0.1);
+  const colW = center ? Math.min(W * 0.88, 1000) : narrow ? W - 78 - 14 : Math.min(W * 0.4, 640);
   const left = center ? (W - colW) / 2 : speaker === 'N' ? margin : W - margin - colW;
   const align = center ? 'center' : speaker === 'N' ? 'left' : 'right';
   el.style.left = left + 'px'; el.style.width = colW + 'px'; el.style.textAlign = align;
@@ -794,9 +795,13 @@ function renderText(k, si) {
   if (lastY.N) orbN.style.top = lastY.N + 'px';
   if (lastY.L) orbL.style.top = lastY.L + 'px';
   const p = 1 + pulse * 0.28;
-  orbN.style.setProperty('--p', speakingNow === 'N' ? p : 1); orbL.style.setProperty('--p', speakingNow === 'L' ? p : 1);
+  const nowP = performance.now(), pdt = Math.min(0.1, (nowP - presT) / 1000); presT = nowP;
+  if (showOrbs || orbN.classList.contains('on')) { presN.draw(nowP / 1000, pdt, speakingNow === 'N', pulse); presL.draw(nowP / 1000, pdt, speakingNow === 'L', pulse); }
 }
 const orbN = $('#orbN'), orbL = $('#orbL'), beamEl = $('#beam');
+const presN = new Presence($('#orbN canvas'), 'N'), presL = new Presence($('#orbL canvas'), 'L');
+addEventListener('resize', () => { presN.resize(); presL.resize(); });
+let presT = performance.now();
 function beam(from, to) {
   const r1 = (from === 'N' ? orbN : orbL).getBoundingClientRect(), r2 = (to === 'N' ? orbN : orbL).getBoundingClientRect();
   const x1 = r1.left + r1.width / 2, y1 = r1.top + r1.height / 2, x2 = r2.left + r2.width / 2, y2 = r2.top + r2.height / 2;

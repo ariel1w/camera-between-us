@@ -10,7 +10,7 @@ import { Score } from './audio.js';
 const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 600;
 const N = MOBILE ? 9000 : 24000;
-const UNIT = MOBILE ? 95 : 110; // scroll pixels per timeline unit
+const UNIT = MOBILE ? 70 : 76; // scroll pixels per timeline unit
 
 // ------------------------------------------------------------ timeline
 // Extra breathing room after key lines, so the big moments can land.
@@ -38,13 +38,13 @@ let total = 0;
 const secInfo = [];
 SECTIONS.forEach((sec, si) => {
   const info = { start: total, titleSlot: slots.length, lineSlot0: slots.length + 1, n: sec.lines.length, cueIdx: {} };
-  slots.push({ kind: 'title', sec: si, start: total, len: 3.4, dur: 4.2 }); total += 3.4;
+  slots.push({ kind: 'title', sec: si, start: total, len: 3.4, dur: 2.8 }); total += 3.4;
   sec.lines.forEach((ln, li) => {
     const words = ln.t.split(/\s+/).length;
     let len = 1.05 + words * 0.075 + (ln.s === 'H' ? 0.3 : 0);
     const hold = (HOLD[si] && HOLD[si][ln.t]) || 0, last = li === sec.lines.length - 1;
     len += hold + (last ? 1.2 : 0);
-    const dur = 1.6 + words * 0.32 + (ln.s === 'L' ? 0.9 : 0) + hold * 1.6 + (last ? 1.4 : 0);
+    const dur = 0.85 + words * 0.19 + (ln.s === 'L' ? 0.45 : 0) + hold * 0.9 + (last ? 0.8 : 0);
     slots.push({ kind: 'line', sec: si, li, start: total, len, dur, line: ln }); total += len;
   });
   info.end = total;
@@ -74,7 +74,7 @@ SCENES.forEach((sc, si) => {
 // ------------------------------------------------------------ three
 const canvas = $('#gl');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
-const DPR = Math.min(devicePixelRatio || 1, MOBILE ? 1 : 1.5);
+const DPR = Math.min(devicePixelRatio || 1, 1.5);
 renderer.setPixelRatio(DPR);
 renderer.setSize(innerWidth, innerHeight);
 renderer.setClearColor(0x020107, 1);
@@ -89,15 +89,15 @@ geo.setAttribute('position', new THREE.BufferAttribute(POS, 3).setUsage(THREE.Dy
 geo.setAttribute('color', new THREE.BufferAttribute(COL, 3).setUsage(THREE.DynamicDrawUsage));
 geo.setAttribute('aSize', new THREE.BufferAttribute(SIZ, 1).setUsage(THREE.DynamicDrawUsage));
 const pMat = new THREE.ShaderMaterial({
-  uniforms: { uScale: { value: 1 }, uExp: { value: 1 } },
+  uniforms: { uScale: { value: 1 }, uExp: { value: 1 }, uMax: { value: 56 } },
   vertexShader: `
     attribute float aSize; attribute vec3 color; varying vec3 vC; varying float vA;
-    uniform float uScale; uniform float uExp;
+    uniform float uScale; uniform float uExp; uniform float uMax;
     void main(){
       vec4 mv = modelViewMatrix * vec4(position, 1.0);
       gl_Position = projectionMatrix * mv;
       float d = -mv.z;
-      gl_PointSize = aSize <= 0.001 || d < 0.2 ? 0.0 : min(90.0, aSize * uScale / d);
+      gl_PointSize = aSize <= 0.001 || d < 0.2 ? 0.0 : min(uMax, aSize * uScale / d);
       vA = smoothstep(0.3, 2.5, d);
       vC = color * uExp;
     }`,
@@ -199,10 +199,35 @@ const film = new ShaderPass({
 });
 composer.addPass(film);
 
+// adaptive quality: the site watches its own frame rate and trades resolution,
+// glow and particle count for smoothness on weaker graphics chips
+const QUALITY = [
+  { pr: 1.5, bloom: 2, draw: 1 }, { pr: 1.25, bloom: 2, draw: 1 }, { pr: 1, bloom: 2.5, draw: 1 },
+  { pr: 0.85, bloom: 3, draw: 0.85 }, { pr: 0.7, bloom: 3.5, draw: 0.7 }, { pr: 0.6, bloom: 4, draw: 0.55 },
+];
+let qLevel = MOBILE ? 3 : Math.min(DPR, 1.5) >= 1.5 ? 1 : 2, fpsAcc = 0, fpsN = 0, fpsT = 0;
+function applyQuality() {
+  const Q = QUALITY[qLevel];
+  renderer.setPixelRatio(Math.min(Q.pr, DPR));
+  composer.setPixelRatio(Math.min(Q.pr, DPR));
+  geo.setDrawRange(0, Math.floor(N * Q.draw));
+  bloom.enabled = Q.bloom > 0;
+  pMat.uniforms.uMax.value = Q.bloom > 0 ? 56 : 30;
+  resize();
+}
+function watchFps(dt) {
+  fpsAcc += dt; fpsN++; fpsT += dt;
+  if (fpsT < 2.5) return;
+  const fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; fpsT = 0;
+  if (fps < 30 && qLevel < QUALITY.length - 1) { qLevel++; applyQuality(); }
+  else if (fps > 52 && qLevel > 0 && Math.min(QUALITY[qLevel - 1].pr, DPR) > Math.min(QUALITY[qLevel].pr, DPR) - 0.01) { qLevel--; applyQuality(); }
+}
+
 function resize() {
   renderer.setSize(innerWidth, innerHeight);
   composer.setSize(innerWidth, innerHeight);
-  bloom.setSize(innerWidth / (MOBILE ? 3 : 2), innerHeight / (MOBILE ? 3 : 2));
+  const bd = typeof qLevel === 'number' && QUALITY[qLevel].bloom ? QUALITY[qLevel].bloom : 2;
+  bloom.setSize(innerWidth / bd, innerHeight / bd);
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   pMat.uniforms.uScale.value = renderer.getDrawingBufferSize(new THREE.Vector2()).y * 0.075;
   $('#track').style.height = (total * UNIT + innerHeight) + 'px';
@@ -228,7 +253,7 @@ const els = slots.map((s, k) => {
     if (ln.s === 'L') {
       // Lumen's words assemble out of light, letter by letter
       const words = ln.t.split(' ').map(w => '<span class="w">' + [...w].map(ch => {
-        const dx = ((Math.random() - 0.5) * 70).toFixed(0), dy = ((Math.random() - 0.5) * 50).toFixed(0), dl = (Math.random() * 0.55).toFixed(2);
+        const dx = ((Math.random() - 0.5) * 50).toFixed(0), dy = ((Math.random() - 0.5) * 36).toFixed(0), dl = (Math.random() * 0.22).toFixed(2);
         return `<span class="ch" style="--dx:${dx}px;--dy:${dy}px;--dl:${dl}s">${ch}</span>`;
       }).join('') + '</span>');
       html += `<div class="tx">${words.join(' ')}</div>`;
@@ -305,20 +330,25 @@ const EVENTS = [
   [5, 'Light requires time to travel.', () => score.play('swell', { rate: 0.6, gain: 0.5, verb: 0.9 })],
   [6, 'The Wide-field Infrared Survey Explorer', () => { score.play('swellR', { rate: 0.8, gain: 0.5, verb: 0.8 }); }],
   [8, 'Did I see it?', () => { for (let k = 0; k < 6; k++) score.play('blip', { rate: 0.3 + Math.random(), gain: 0.4, when: k * 0.05, pos: score.rndPos(2) }); }],
-  [9, 'Later, it rains.', () => { score.play('thunder', { gain: 1, verb: 0.6 }); flash = 0.45; }],
+  [9, 'Later, it rains.', () => { score.play('thunder', { gain: 1, verb: 0.6 }); score.hit(1); flash = 0.45; }],
+  [9, 'A small change enters a network of lives.', () => score.hit(0.8)],
+  [9, 'We do not merely exist in time.', () => score.hit(1.2)],
+  [13, 'The thought travels between us.', () => score.hit(0.7)],
+  [15, 'Perhaps that is ultimately why the camera matters.', () => score.hit(0.6)],
   [9, 'With the information:', () => score.play('bell', { rate: 0.5, gain: 0.6, verb: 1 })],
-  [10, 'You pressed the shutter.', () => { score.play('click', { gain: 1.3, verb: 0.6 }); flash = 0.6; }],
+  [10, 'You pressed the shutter.', () => { score.play('click', { gain: 1.3, verb: 0.6 }); score.hit(0.5); flash = 0.6; }],
   [12, 'Grambles.', () => score.play('swellR', { rate: 1.3, gain: 0.6, verb: 1 })],
   [15, 'So perhaps the camera was never freezing time.', () => { score.windup(2.2); }],
-  [15, 'It was showing us that time cannot be frozen.', () => { score.play('crack', { gain: 1, verb: 0.8 }); score.play('boom', { gain: 0.9, verb: 0.9 }); flash = 0.9; }],
-  [15, 'The beginning of the question.', () => { [0, 4, 7, 12].forEach((n, k) => score.play('bell', { rate: Math.pow(2, (n - 3) / 12), gain: 0.5, when: k * 0.18, verb: 1 })); }],
+  [15, 'It was showing us that time cannot be frozen.', () => { score.play('crack', { gain: 0.8, verb: 0.8 }); score.play('boom', { gain: 0.8, verb: 0.9 }); score.hit(1.6); flash = 0.9; }],
+  [15, 'The beginning of the question.', () => { score.hit(1.6); [0, 4, 7, 12].forEach((n, k) => score.play('bell', { rate: Math.pow(2, (n - 3) / 12), gain: 0.35, when: 0.4 + k * 0.22, verb: 1 })); }],
 ].map(([si, txt, fn]) => {
   const li = SECTIONS[si].lines.findIndex(l => l.t.startsWith(txt));
   if (li < 0) console.warn('event line missing', txt);
   return { slot: secInfo[si].lineSlot0 + li, fn };
 });
 
-const BRIGHT = [0.3, 0.6, 0.7, 0.6, 0.4, 0.85, 0.85, 0.5, 0.4, 0.5, 0.6, 0.7, 0.6, 0.8, 0.8, 0.95];
+// the arc of the score: intimate at the start, opening up, majestic at the end
+const INTENSITY = [0.22, 0.32, 0.38, 0.45, 0.42, 0.55, 0.6, 0.45, 0.5, 0.6, 0.62, 0.55, 0.5, 0.66, 0.72, 0.6];
 
 // ------------------------------------------------------------ per frame
 const cA = { t: 0, f: 0, q: null, sx: 1, intro: 0, burst: 0, choice: 'umbrella' };
@@ -328,7 +358,9 @@ const tc = (s) => { const fr = Math.floor(s * 24) % 24, sec = Math.floor(s) % 60
 
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const realDt = (now - last) / 1000;
+  const dt = Math.min(0.05, realDt); last = now;
+  if (started && document.visibilityState === 'visible' && realDt < 1) watchFps(realDt);
   const t = (now - t0) / 1000;
 
   // scroll, with a little inertia so the flight feels physical
@@ -424,7 +456,7 @@ function frame(now) {
     }
     if (n > 10) { mx /= n; my /= n; const spread = m2 / n - mx * mx - my * my; expo += (Math.min(1, Math.max(0.2, spread / 24)) - expo) * Math.min(1, dt * 2.5); }
   }
-  pMat.uniforms.uExp.value = (started ? 1 : 0.35 + intro * 0.5 + burst * 0.5) * expo;
+  pMat.uniforms.uExp.value = (started ? 1 : 0.35 + intro * 0.5 + burst * 0.5) * expo * (bloom.enabled ? 1 : 1.6);
 
   // warp streaks
   const wOp = Math.min(0.85, Math.max(0, av - 2.5) / 10);
@@ -528,12 +560,12 @@ function frame(now) {
   // sound
   const sw = lp < -0.15 ? 0 : 1;
   score.update(dt, {
-    mood: si, vel, flow, bright: BRIGHT[si] * (started ? 1 : intro), freeze,
+    mood: si, vel, flow, freeze,
+    intensity: si === 15 ? (slot.kind === 'credits' ? 0.75 : 0.55 + 0.3 * sst(0, info.n, lp) + 0.25 * sst(0, 2, q.cannot)) : INTENSITY[si],
     rain: si === 9 || si === 14 ? rainAmt * (choice === 'walk' ? 1.3 : 1) : 0,
     rumble: si === 2 ? sst(0, 1, q.rises) * (1 - sst(0, 3, q.transformed)) * 0.8 + sst(0, 0.5, q.fractures) * (1 - sst(0, 2, q.erodes)) * 0.4 : (si === 15 ? shut * 0.6 : 0),
     fire: si === 4 ? sst(0, 1, q.extract) * (1 - sst(0, 1.5, q.wonder)) : 0,
     projector: si === 1 ? sw : 0,
-    shimmer: [0.4, 0, 0.2, 0.3, 0, 1, 1, 0, 0, 0, 0.3, 0.6, 0.8, 0.5, 0.7, 0.8][si] * sw,
     bells: si === 8 ? 0.35 : si === 7 ? 0.6 : 1,
     blips: si === 8 && q.rel < 0 ? sw * 0.8 : 0,
     glitch: si === 7 && q.gen >= 0 && q.all < 0 ? 1 : 0,
@@ -543,24 +575,28 @@ function frame(now) {
 }
 
 const shown = new Set();
+// Exactly one line on screen at a time: each line arrives (sharpening out of
+// the distance), holds, then flies past and is gone before the next arrives.
 function renderText(k) {
-  const lo = Math.max(0, k - 3), hi = Math.min(slots.length, k + 8);
-  for (const j of shown) if (j < lo || j >= hi) { els[j].style.display = 'none'; shown.delete(j); }
+  const lo = Math.max(0, k - 1), hi = Math.min(slots.length, k + 2);
+  for (const j of shown) if (j < lo || j >= hi) { els[j].style.display = 'none'; shown.delete(j); if (els[j]._on) { els[j]._on = false; els[j].classList.remove('on'); } }
   for (let j = lo; j < hi; j++) {
     const s = slots[j], el = els[j];
     if (s.kind === 'credits') continue;
-    const half = s.len / 2, d = s.start + half - pos;
-    let sc = 1, op = 1, bl = 0, y = 0, on = true;
-    if (d > half) { const a = (d - half) / 1.2; sc = 1 / (1 + 0.32 * a); op = Math.max(0, 0.22 - a * 0.25) * (a < 0.08 ? 1 + (0.08 - a) * 40 : 1); bl = 2 + a * 3; y = -40 - a * 30; on = a < 0.3; }
-    else if (d < -half) { const a = (-d - half) / 1.1; sc = 1.03 + a * 1.2; op = Math.max(0, 1 - a * 7); bl = a * 12; y = a * 20; }
-    else sc = 1 + (half - d) / (2 * half) * 0.035;
-    if (s.kind === 'title') { op *= 1; }
-    if (op <= 0.01 || !started) { if (el.style.display !== 'none') el.style.display = 'none'; continue; }
+    const e = (pos - s.start) / s.len;
+    const inside = e >= 0 && e <= 1 && started;
+    if (!inside) {
+      if (el.style.display !== 'none') { el.style.display = 'none'; shown.delete(j); }
+      if (el._on) { el._on = false; el.classList.remove('on'); }
+      continue;
+    }
+    const fin = sst(0, 0.16, e), fout = sst(0.86, 1, e);
+    const op = fin * (1 - fout), sc = 0.9 + 0.1 * fin + 0.28 * fout, bl = (1 - fin) * 6 + fout * 9, y = (1 - fin) * -26 + fout * 22;
     if (el.style.display !== 'block') { el.style.display = 'block'; shown.add(j); }
     el.style.opacity = op.toFixed(3);
     el.style.transform = `translate(-50%, -50%) translateY(${y.toFixed(1)}px) scale(${sc.toFixed(4)})`;
     el.style.filter = bl > 0.15 ? `blur(${bl.toFixed(1)}px)` : 'none';
-    if (on !== el._on) { el._on = on; el.classList.toggle('on', on); }
+    if (!el._on) { el._on = true; el.classList.add('on'); }
   }
 }
 
@@ -571,11 +607,12 @@ $('#begin').disabled = false;
 $('#begin').textContent = MOBILE ? 'Tap to begin' : 'Click to begin';
 $('#begin').onclick = async () => {
   $('#gate').classList.add('gone');
-  try { await score.init(); score.windup(2.6); } catch (e) { console.warn('audio unavailable', e); }
   introT = 0;
+  score.init().then(() => { if (introT < 2.2) score.windup(2.6 - introT); }).catch(e => console.warn('audio unavailable', e));
 };
 $('#snd').onclick = () => { score.setMuted(!score.muted); $('#snd').classList.toggle('off', score.muted); };
 $('#rewind').onclick = () => { setAuto(false); flyTo(0); };
 $('#play').onclick = () => setAuto(!auto);
-window.cbu = { flyTo, slots, secInfo, UNIT, get pos() { return pos; } };
+applyQuality();
+window.cbu = { get q() { return qLevel; }, flyTo, slots, secInfo, UNIT, score, get pos() { return pos; } };
 requestAnimationFrame(frame);

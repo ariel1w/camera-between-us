@@ -618,14 +618,21 @@ function frame(now) {
   }
   // auto exposure: the more tightly packed the shape on screen, the dimmer each particle
   {
-    let n = 0, mx = 0, my = 0, m2 = 0;
-    const camZ = camera.position.z;
-    for (let i = 0; i < N; i += 97) {
+    // measured as the shape's screen area (width x height), so a thin bright band dims too
+    let n = 0, mx = 0, my = 0, mxx = 0, myy = 0;
+    for (let i = 0; i < N; i += 61) {
       if (SIZ[i] <= 0.001) continue;
-      const d = Math.max(1, camZ - POS[i * 3 + 2]), px = POS[i * 3] / d * 14, py = POS[i * 3 + 1] / d * 14;
-      mx += px; my += py; m2 += px * px + py * py; n++;
+      tmpV.set(POS[i * 3], POS[i * 3 + 1], POS[i * 3 + 2]).project(camera);
+      if (tmpV.z > 1) continue;
+      const px = tmpV.x * 8 * camera.aspect, py = tmpV.y * 8;
+      mx += px; my += py; mxx += px * px; myy += py * py; n++;
     }
-    if (n > 10) { mx /= n; my /= n; const spread = m2 / n - mx * mx - my * my; expo += (Math.min(1, Math.max(0.2, spread / 24)) - expo) * Math.min(1, dt * 2.5); }
+    if (n > 10) {
+      mx /= n; my /= n;
+      const vx = Math.max(0.01, mxx / n - mx * mx), vy = Math.max(0.01, myy / n - my * my);
+      const area = Math.sqrt(vx * vy);
+      expo += (Math.min(1, Math.max(0.14, area / 14)) - expo) * Math.min(1, dt * 2.5);
+    }
   }
   pMat.uniforms.uExp.value = (started ? 1 + pulse * 0.32 : 0.35 + intro * 0.5 + burst * 0.5) * expo * (bloom.enabled ? 1 : 1.6);
 
@@ -805,7 +812,7 @@ function frame(now) {
 // Neil speaks from the left, Lumen from the right, the picture between them.
 // Each line is placed where the picture is darkest, chosen when it arrives.
 const GW = 18, GH = 12, grid = new Float32Array(GW * GH), gtmp = new Float32Array(GW * GH);
-let frameNo = 0;
+let frameNo = 0, hot = 0;
 function updateDensity() {
   gtmp.fill(0);
   points.updateMatrixWorld(true);
@@ -821,7 +828,9 @@ function updateDensity() {
     if (gx > 0) gtmp[gy * GW + gx - 1] += v * 0.35; if (gx < GW - 1) gtmp[gy * GW + gx + 1] += v * 0.35;
     if (gy > 0) gtmp[(gy - 1) * GW + gx] += v * 0.35; if (gy < GH - 1) gtmp[(gy + 1) * GW + gx] += v * 0.35;
   }
-  for (let i = 0; i < grid.length; i++) grid[i] += (gtmp[i] - grid[i]) * 0.35;
+  let mxc = 0;
+  for (let i = 0; i < grid.length; i++) { grid[i] += (gtmp[i] - grid[i]) * 0.35; if (grid[i] > mxc) mxc = grid[i]; }
+  hot = mxc;
 }
 function boxDensity(x0, y0, w, h) {
   const cx0 = Math.max(0, Math.floor(x0 / innerWidth * GW)), cx1 = Math.min(GW - 1, Math.floor((x0 + w) / innerWidth * GW));
@@ -835,9 +844,9 @@ function deckH() { return parseFloat(getComputedStyle(document.documentElement).
 function placeLine(j) {
   const s = slots[j], el = els[j], W = innerWidth, H = innerHeight, narrow = W < 700;
   const speaker = s.kind === 'line' ? s.line.s : 'T';
-  const center = s.kind === 'title' || speaker === 'H' || s.hero;
+  const center = s.kind === 'title' || speaker === 'H';
   const margin = narrow ? 78 : Math.max(150, W * 0.1);
-  const colW = center ? Math.min(W * 0.88, 1000) : narrow ? W - 78 - 14 : Math.min(W * 0.4, 640);
+  const colW = center ? Math.min(W * 0.88, 1000) : narrow ? W - 78 - 14 : Math.min(W * (s.hero ? 0.46 : 0.4), s.hero ? 760 : 640);
   const left = center ? (W - colW) / 2 : speaker === 'N' ? margin : W - margin - colW;
   const align = center ? 'center' : speaker === 'N' ? 'left' : 'right';
   el.style.left = left + 'px'; el.style.width = colW + 'px'; el.style.textAlign = align;
@@ -964,5 +973,5 @@ $('#back').onclick = () => step(-1);
 $('#fwd').onclick = () => step(1);
 setSpeed(speedIdx);
 applyQuality();
-window.cbu = { get q() { return qLevel; }, flyTo, slots, secInfo, UNIT, score, get pos() { return pos; } };
+window.cbu = { get hot() { return hot; }, get expo() { return expo; }, get q() { return qLevel; }, flyTo, slots, secInfo, UNIT, score, get pos() { return pos; } };
 requestAnimationFrame(frame);

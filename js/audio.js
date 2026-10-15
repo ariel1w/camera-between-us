@@ -82,7 +82,7 @@ export class Score {
   constructor() {
     this.ready = false; this.muted = false; this.t = 0; this.lastStep = 0; this.dir = 1;
     this.running = false; this.mood = -1; this.ci = 0; this.chordT = 0; this.cur = null;
-    this.boost = 0; this.nextSparkle = 2; this.themeK = 0; this.chordCount = 0;
+    this.boost = 0; this.nextSparkle = 2; this.themeK = 0; this.chordCount = 0; this.visualEvents = [];
     this.tape = 1; this.tempo = 1; this.nextNote = 0; this.step = 99; this.stepsInChord = 8; this.pattern = [0];
   }
 
@@ -274,7 +274,7 @@ export class Score {
     let best = regs[0]; for (const r of regs) if (Math.abs(midi - r[0]) < Math.abs(midi - best[0])) best = r;
     const name = best[1] + (this.dir < 0 ? 'R' : '');
     this.play(name, { rate: Math.pow(2, (midi - best[0]) / 12) * this.tape, gain, at, inst: true, pos: [pan * 2.5, 0.3, -1.2] });
-    if (this.onNote) { const ms = Math.max(0, (at - this.ctx.currentTime) * 1000); setTimeout(() => this.onNote(gain, midi < 50), ms); }
+    if (this.visualEvents.length < 200) this.visualEvents.push({ at, gain, bass: midi < 50 });
   }
 
   // a swell that blooms and dies away: never held
@@ -292,6 +292,7 @@ export class Score {
   timp(root, gain = 0.7, when = 0) {
     let n = root; while (n > 41) n -= 12; while (n < 33) n += 12;
     this.play('timp', { rate: mtof(n) / 73.42, gain, verb: 0.5, when });
+    if (this.ctx) this.visualEvents.push({ at: this.ctx.currentTime + when, gain: 0.5, bass: true });
   }
 
   // a harp sweep up through the chord
@@ -312,6 +313,7 @@ export class Score {
     for (const [idx, d] of ph) {
       const n = all[Math.min(idx, all.length - 1)];
       this.play(this.dir < 0 ? 'bellR' : 'bell', { rate: mtof(n) / 523.25 * this.tape, gain: 0.13 + I * 0.07, at: t, inst: true, pos: [0.6, 0.6, -1.5] });
+      this.visualEvents.push({ at: t, gain: 0.3, bass: false });
       t += d * (1.3 - I * 0.35);
     }
   }

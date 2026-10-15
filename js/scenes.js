@@ -1,7 +1,7 @@
 // The sixteen scenes. Each scene is a list of "states": functions that place
 // particle i (position, colour, size) into the scratch array O. Cues tie state
 // changes to specific lines of the text, so the picture follows the words.
-import * as SH from './shapes.js?v=9';
+import * as SH from './shapes.js?v=10';
 
 export const O = new Float32Array(7); // x y z r g b size
 const TAU = Math.PI * 2;
@@ -205,13 +205,27 @@ SCENES.push({
       set(cx + x, cy + y, z, r * (0.3 + near), g * (0.3 + near), b * (0.3 + near), s * (0.6 + near));
     },
     (i, c) => { // the wheel: something fundamental had been discovered
-      const q = R1[i], spin = c.f * 0.12;
-      let x, y;
-      if (q < 0.5) { const a = R2[i] * TAU, rr = 4 + G1[i] * 0.06; x = Math.cos(a) * rr; y = Math.sin(a) * rr; }
-      else if (q < 0.85) { const k = Math.floor(R2[i] * 10), a = k / 10 * TAU + spin, t = R3[i] * 4; x = Math.cos(a) * t; y = Math.sin(a) * t; }
-      else { const a = R2[i] * TAU, rr = R3[i] * 0.7; x = Math.cos(a) * rr; y = Math.sin(a) * rr; }
-      set(x, y + 1.2, G2[i] * 0.15, 0.9, 0.62, 0.28, 0.7 + R4[i] * 0.6);
-      if (q < 0.5) rotZ(0); // rim is round, spin visible through spokes
+      const q = R1[i], spin = c.f * 0.32, a = R2[i] * TAU;
+      let x, y, z, rr;
+      if (q < 0.46) {
+        const ring = Math.floor(R3[i] * 3);
+        rr = 3.65 + ring * 0.19 + G1[i] * 0.025;
+        x = Math.cos(a) * rr; y = Math.sin(a) * rr;
+        z = (R4[i] < 0.5 ? -1 : 1) * 0.3;
+      } else if (q < 0.82) {
+        const spoke = Math.floor(R2[i] * 12), u = R3[i];
+        const angle = spoke / 12 * TAU + spin + Math.sin(u * Math.PI) * 0.09;
+        rr = 0.65 + u * 3;
+        x = Math.cos(angle) * rr; y = Math.sin(angle) * rr;
+        z = (R4[i] - 0.5) * 0.14 + (1 - u) * 0.3;
+      } else {
+        rr = 0.46 + R3[i] * 0.2;
+        x = Math.cos(a + spin) * rr; y = Math.sin(a + spin) * rr;
+        z = (R4[i] - 0.5) * 0.9;
+      }
+      const glint = Math.pow(Math.max(0, Math.cos(a - spin * 1.7)), 24);
+      set(x, y, z, 0.72 + glint * 0.65, 0.42 + glint * 0.62, 0.15 + glint * 0.45, 0.65 + glint * 0.8);
+      rotY(0.24 + Math.sin(c.f * 0.13) * 0.14); rotX(-0.14); O[1] += 1.2;
     },
   ],
 });
@@ -283,7 +297,12 @@ function shapeIdx(i, c, idx) {
   switch (idx) {
     case 0: fromShape(S.human, i, 1, 0, 0, 0); break;
     case 1: fromShape(S.animal, i, 1.1, 0, 0, 0); break;
-    case 2: fromShape(S.tree.pts, i, 1, 0, 0.2, 0); break;
+    case 2:
+      fromShape(S.tree.pts, i, 1, 0, 0.2, 0);
+      { const h = Math.max(0, (O[1] + 3.4) / 7);
+        O[0] += Math.sin(c.f * 0.7 + O[1] * 0.65) * h * h * 0.22;
+        O[2] += Math.cos(c.f * 0.5 + O[0]) * h * 0.12; }
+      break;
     case 3: fromShape(S.gear, i, 1.25, 0, 0, 0); rotZ(c.f * 0.15); break;
     case 4: fromShape(S.cone, i, 1, 0, 0, 0); break;
     case 5: fromShape(S.planet.pts, i, 1.2, 0, 0, 0); break;
@@ -295,8 +314,11 @@ function shapeIdx(i, c, idx) {
   O[1] += 1.2;
   const col = SHAPE_COL[idx] || SHAPE_COL[8];
   let br = 0.75 + 0.25 * Math.sin(c.t * 2 + R1[i] * 30);
-  if (idx === 2 && S.tree.tags[i % S.tree.tags.length] === 0) { O[3] = 0.55 * br; O[4] = 0.35 * br; O[5] = 0.2 * br; }
-  else { O[3] = col[0] * br; O[4] = col[1] * br; O[5] = col[2] * br; }
+  if (idx === 2 && S.tree.tags[i % S.tree.tags.length] === 0) { O[3] = 0.95 * br; O[4] = 0.64 * br; O[5] = 0.3 * br; }
+  else { O[3] = col[0] * br; O[4] = col[1] * br; O[5] = col[2] * br;
+    if(idx === 2) { const glint=Math.pow(Math.max(0,Math.sin(c.f*2+R3[i]*80)),24)*(0.25+(c.treble||0));
+      O[3]+=glint*0.8; O[4]+=glint; O[5]+=glint*0.65; }
+  }
   O[6] = 0.6 + R2[i] * 0.6;
 }
 const ROW = [0, 9, 4, 3, 6]; // human, flower, mountain, computer, star
@@ -385,26 +407,35 @@ SCENES.push({
   ],
 });
 function strata(i, c, glow, fire, onlyLayers) {
-  const isFern = !onlyLayers && R4[i] < 0.38;
-  if (isFern) {
-    fromShape(S.fern, i, 1.25, 0, -1.6, 2.2);
-    const g = glow ? 1 : 0.18;
-    O[3] = 0.95 * g + 0.1; O[4] = 0.72 * g + 0.08; O[5] = 0.25 * g + 0.05; O[6] = 0.7 + glow * 0.5;
-    if (fire) {
-      const t = fract(R1[i] * 3 + c.f * 0.08), up = t * 9;
-      O[0] += Math.sin(t * 9 + R2[i] * 20) * (0.3 + t); O[1] += up; O[2] += Math.cos(t * 7 + R3[i] * 20) * 0.4;
-      O[3] = 1; O[4] = Math.max(0, 0.85 - t * 0.9); O[5] = Math.max(0, 0.3 - t * 0.5); O[6] = 1.3 * (1 - t) + 0.2;
+  const bass = c.bass || 0, treble = c.treble || 0;
+  if (!onlyLayers && R4[i] < 0.43) {
+    fromShape(S.fern, i, 1.12, 0, 0.5, 2.6);
+    const height = Math.max(0, (O[1] + 2.6) / 6);
+    O[0] *= 1.65;
+    O[0] += Math.sin(c.f * 0.55 + height * 3) * height * 0.16;
+    O[2] += Math.sin(height * 4 + c.f * 0.4) * height * 0.22;
+    const vein = Math.pow(Math.max(0, Math.cos(height * 12 - c.f * 1.7)), 12) * (0.2 + treble);
+    const bright = 0.42 + glow * 0.55 + vein;
+    O[3] = bright; O[4] = bright * 0.76; O[5] = bright * 0.28; O[6] = 0.75 + vein * 0.55;
+    if (fire && R3[i] < 0.65) {
+      const t = fract(R1[i] + c.f * 0.13);
+      O[0] += Math.sin(t * 9 + R2[i] * 20) * t * 1.2;
+      O[1] += t * 9; O[2] += Math.cos(t * 8 + R3[i] * 20) * t;
+      O[3] = 1.25; O[4] = 0.85 * (1 - t); O[5] = 0.12 * (1 - t);
+      O[6] = (1 - t) * (1.2 + bass * 0.5);
     }
     return;
   }
-  const layer = Math.floor(R1[i] * 9);
-  const x = (R2[i] - 0.5) * 26 * c.sx, z = (R3[i] - 0.5) * 8;
-  const y = -6.5 + layer * 0.9 + Math.sin(x * 0.35 + layer) * 0.25 + G1[i] * 0.12;
-  const pal = [[0.35, 0.22, 0.15], [0.5, 0.35, 0.2], [0.28, 0.25, 0.35], [0.55, 0.42, 0.25], [0.3, 0.2, 0.15], [0.45, 0.3, 0.3], [0.25, 0.25, 0.4], [0.5, 0.38, 0.22], [0.35, 0.3, 0.25]][layer];
-  set(x, y + 1.2, z, pal[0], pal[1], pal[2], 0.6 + R4[i] * 0.4);
-  rotX(0.15);
+  const layer = Math.floor(R1[i] * 9), u = R2[i] * 2 - 1;
+  const x = u * 8.5 * c.sx, z = -1 - R3[i] * 5;
+  const fold = Math.sin(u * 3.6 + layer * 0.24) * 0.65 + Math.sin(u * 8 - layer * 0.2) * 0.15;
+  const pressure = bass * Math.sin(u * 5 - c.f * 1.8) * 0.08;
+  const y = -4.4 + layer * 0.52 + fold + pressure + G1[i] * 0.035;
+  const seam = R4[i] > 0.8, glint = Math.pow(Math.max(0, Math.cos(u * 5 - c.f * 0.8 + layer)), 24) * treble;
+  const warm = layer % 3 !== 0;
+  set(x, y, z, (warm ? 0.65 : 0.31) + glint, (warm ? 0.4 : 0.36) + glint * 0.8, (warm ? 0.22 : 0.65) + glint * 0.6, seam ? 0.85 : 0.5);
+  if (!seam) { O[3] *= 0.58; O[4] *= 0.58; O[5] *= 0.58; }
 }
-
 // ---------- 5. The Night Sky That Never Existed
 // distance per star (log scale) and named anchors for the labels
 export const SKY_LABELS = [
@@ -445,11 +476,11 @@ export function skyAnchor(c, k, sep, out) {
 }
 
 // ---------- 6. The Camera Looks into Cosmic Time
-const GAL = 150;
+const GAL = 72;
 function deepField(i, c, ir, flyBy = 1) {
   const g = i % GAL, hidden = R4[i] < 0.16;
-  const gx = (fract(Math.sin(g * 12.9898) * 43758.5) - 0.5) * 50 * c.sx;
-  const gy = (fract(Math.sin(g * 78.233) * 12345.6) - 0.5) * 28;
+  const gx = (fract(Math.sin(g * 12.9898) * 43758.5) - 0.5) * 36 * c.sx;
+  const gy = (fract(Math.sin(g * 78.233) * 12345.6) - 0.5) * 21;
   const gz = -130 + fract(fract(Math.sin(g * 39.425) * 24634.6) + c.f * 0.012 * flyBy) * 142;
   const kind = fract(Math.sin(g * 7.1) * 9876.5), size = 0.6 + kind * 2.2;
   if (hidden) { // only infrared reveals these
@@ -462,16 +493,21 @@ function deepField(i, c, ir, flyBy = 1) {
   let x, y, z;
   if (kind < 0.65) { // spiral
     const t = Math.pow(R1[i], 0.7), rad = t * size, arm = R2[i] < 0.5 ? 0 : Math.PI;
-    const a = arm + Math.log(rad + 0.2) * 2.6 + G1[i] * 0.25;
+    const a = arm + Math.log(rad + 0.2) * 2.6 + G1[i] * 0.17 + c.f * 0.035;
     x = Math.cos(a) * rad; z = Math.sin(a) * rad; y = G2[i] * 0.06 * size;
   } else { x = G1[i] * size * 0.4; y = G2[i] * size * 0.28; z = G3[i] * size * 0.3; }
   O[0] = x; O[1] = y; O[2] = z; rotX(kind * 6); rotY(g);
   O[0] += gx; O[1] += gy; O[2] += gz;
   const near = sst(-130, 0, O[2]);
+  const core = Math.exp(-R1[i] * 16), beat = (c.bass || 0) * 0.045;
+  O[0] += x * beat; O[1] += y * beat;
+  const sparkle = Math.pow(Math.max(0, Math.cos(c.f * 2 + g + R3[i] * 20)), 28) * (c.treble || 0);
   let r, gg, b;
   if (kind < 0.65) { r = 0.6; gg = 0.7; b = 1; } else { r = 1; gg = 0.85; b = 0.55; }
   r = mix(r, 1, ir); gg = mix(gg, 0.45, ir); b = mix(b, 0.2, ir);
-  O[3] = r * (0.25 + near * 0.6); O[4] = gg * (0.25 + near * 0.6); O[5] = b * (0.25 + near * 0.6); O[6] = 0.5 + near * 0.9;
+  const lum = 0.48 + near * 0.65 + core * 0.7 + sparkle * 0.6;
+  O[3] = mix(r, 1.15, core) * lum; O[4] = mix(gg, 0.88, core) * lum; O[5] = mix(b, 0.58, core) * lum;
+  O[6] = 0.65 + near * 0.85 + core * 0.4 + sparkle * 0.4;
 }
 SCENES.push({
   cues: { wise: 'The Wide-field Infrared Survey Explorer', both: 'The universe has not altered itself' },
@@ -487,7 +523,9 @@ function screen(i, c, focus) {
   const cols = mobile ? 2 : 4, col = mobile ? s4 % 2 : s4, row = mobile ? Math.floor(s4 / 2) : 0;
   const W = mobile ? 3.4 : 5.6, H = W * 0.62, gap = mobile ? 0.5 : 0.7;
   const cx0 = (col - (cols - 1) / 2) * (W + gap), cy0 = mobile ? 3.2 - row * (H + gap) : 1.4;
-  const f = focus === s4 ? 1 : 0, dim = focus < 0 ? 0.8 : f ? 1.15 : 0.35, grow = 1 + f * 0.18;
+  const cue = ['rec','edit','act','gen'][s4];
+  const f = focus === s4 ? sst(0, 1.5, c.q[cue]) : 0;
+  const dim = focus < 0 ? 0.85 : 0.5 + f * 0.7, grow = 1 + f * 0.15;
   const j = Math.floor(i / 4);
   const q = R1[j];
   let u, v, r, g, b, sz = 0.6;
@@ -501,7 +539,7 @@ function screen(i, c, focus) {
     const p = R2[j], hk = (j * 3) % (S.human.length / 3) * 3;
     if (p < 0.4) { u = R3[j] * 2 - 1; v = -0.35 - R4[j] * 0.6; r = 0.3; g = 0.45; b = 0.3; }
     else if (p < 0.55) { const a = R3[j] * TAU, rr = Math.sqrt(R4[j]) * 0.16; u = 0.55 + Math.cos(a) * rr; v = 0.5 + Math.sin(a) * rr * 1.6; r = 1; g = 0.8; b = 0.45; }
-    else { u = S.human[hk] * 0.11 - 0.3 + (s4 === 0 ? Math.sin(c.f * 0.15) * 0.25 : 0); v = S.human[hk + 1] * 0.17 - 0.12; r = 0.95; g = 0.85; b = 0.8; sz = 0.55; }
+    else { u = S.human[hk] * 0.11 - 0.3 + Math.sin(c.f * 0.45) * 0.18; v = S.human[hk + 1] * 0.17 - 0.12; r = 0.95; g = 0.85; b = 0.8; sz = 0.55; }
     if (s4 === 1) { // edited: tiles cut and rearranged
       const tx = Math.floor((u + 1) * 1.5), ty = Math.floor((v + 1) * 1.5), cut = Math.floor(c.f * 0.6);
       const perm = fract(Math.sin((tx * 3 + ty + cut * 7.3) * 91.7) * 4375.5);
@@ -522,7 +560,13 @@ function screen(i, c, focus) {
       r = 0.5 + 0.5 * Math.sin(hue * TAU); g = 0.5 + 0.5 * Math.sin(hue * TAU + 2.1); b = 0.5 + 0.5 * Math.sin(hue * TAU + 4.2);
     }
   }
-  set(cx0 + u * W * 0.5 * grow, cy0 + v * H * 0.5 * grow, f * 1.5, r * dim, g * dim, b * dim, sz * (0.8 + f * 0.4));
+  const yaw = mobile ? (col - 0.5) * -0.16 : (s4 - 1.5) * -0.22;
+  const localX = u * W * 0.5 * grow;
+  const railZ = mobile ? -1 : -Math.pow(s4 - 1.5, 2) * 1.1;
+  const glint = q < 0.3 ? Math.pow(Math.max(0, Math.cos(u*4+v*3-c.f*1.5)),24)*(c.treble||0) : 0;
+  set(cx0 + localX * Math.cos(yaw), cy0 + v * H * 0.5 * grow,
+    railZ - localX * Math.sin(yaw) + f * 3.2 + Math.sin(c.f*0.4+s4)*0.08,
+    r * dim + glint, g * dim + glint, b * dim + glint, sz * (0.8 + f * 0.4));
 }
 SCENES.push({
   cues: { rec: 'The recorded', edit: 'The edited', act: 'The acted', gen: 'The generated', all: 'All four can produce persuasive images.' },
@@ -537,18 +581,27 @@ SCENES.push({
 
 // ---------- 8. The Matrix Question
 function rain(i, c, freeze, tear) {
-  const COLS = c.sx < 0.7 ? 46 : 96, ROWS = 46, layer = i % 3;
-  const k = Math.floor(i / 3), col = k % COLS, row = Math.floor(k / COLS) % ROWS;
-  const x = (col / COLS - 0.5) * (34 + layer * 12) * c.sx, y = 11 - row * 0.5 * (1 + layer * 0.35), z = -2 - layer * 8;
-  const sp = 0.4 + fract(Math.sin(col * 12.3 + layer * 7) * 999) * 0.9, ph = fract(Math.sin(col * 3.7 + layer) * 777);
-  const head = fract(ph + (c.f * 0.03 + c.t * 0.05 * (1 - freeze)) * sp) * (ROWS + 18);
-  const d = head - row;
-  let br = d >= 0 && d < 16 ? Math.pow(1 - d / 16, 1.6) : 0;
-  const flick = fract(Math.sin((row * 31 + col * 17) + Math.floor(c.t * 8) * 0.37) * 999);
-  let xx = x;
-  if (tear > 0) { const band = Math.floor(y * 1.3 + c.t * 4); xx += (fract(Math.sin(band * 9.1 + Math.floor(c.t * 7)) * 99) - 0.5) * 3 * tear; }
-  const hd = d >= 0 && d < 1.2 ? 1 : 0;
-  set(xx, y, z, 0.5 * br + hd * 0.9, (1.6 * br + 0.06) * (0.7 + flick * 0.3), 0.55 * br + hd * 0.8, (0.45 + br * 1.1 + hd * 0.6) * (1 - layer * 0.2));
+  const cols = c.sx < 0.7 ? 24 : 48, rows = 36, layer = i % 3;
+  const k = Math.floor(i / 3), col = k % cols, row = Math.floor(k / cols) % rows;
+  // Repeated samples form small angular glyphs instead of isolated dots.
+  const glyph = Math.floor(k / (cols * rows)) % 4;
+  const seed = fract(Math.sin(col * 12.3 + layer * 7) * 999);
+  const time = c.f * (1 - freeze * 0.88);
+  const head = fract(seed + time * (0.06 + seed * 0.055)) * (rows + 12);
+  const d = (head - row + rows + 12) % (rows + 12);
+  const br = d < 14 ? Math.pow(1 - d / 14, 1.5) : 0.025;
+  const hd = d < 1.2 ? 1 : 0;
+  let x = (col / (cols - 1) - 0.5) * 22 * c.sx;
+  let y = 10 - row * 0.52;
+  const u = R2[i] - 0.5;
+  if (glyph === 0) { x += u * 0.16; y += 0.14; }
+  else if (glyph === 1) { x += 0.08; y += u * 0.28; }
+  else if (glyph === 2) { x += u * 0.16; y += u * 0.28; }
+  else { x -= 0.08; y += u * 0.28; }
+  const band = Math.floor(y * 1.3 + c.f * 2);
+  x += tear * (fract(Math.sin(band * 9.1 + Math.floor(c.f * 5)) * 99) - 0.5) * 2.2;
+  const glint = hd * (c.treble || 0), pressure = (c.bass || 0) * Math.sin(col * 0.3 - c.f) * 0.16;
+  set(x, y, -layer * 6 + pressure, br * 0.18 + hd * 0.7 + glint, br * 1.25 + hd * 0.45 + glint, br * 0.42 + hd * 0.65 + glint, (0.6 + br * 0.65 + hd * 0.3) * (1 - layer * 0.18));
 }
 function eye(i, c, warm) {
   const q = R1[i]; let x, y, r, g, b;
@@ -651,15 +704,26 @@ function earthAt(i, c) {
   O[6] = 0.8;
 }
 function wallOfFrames(i, c, scan) {
-  const cols = c.sx < 0.7 ? 12 : 30, rows = 18, k = i % (cols * rows), col = k % cols, row = Math.floor(k / cols);
-  const fw = 0.9, fh = 0.6, cx = (col - (cols - 1) / 2) * 1.05, cy = (row - (rows - 1) / 2) * 0.75 + 1;
-  const t = R2[i] * 4, side = Math.floor(t), w = t - side;
-  const u = side === 0 ? -1 + w * 2 : side === 1 ? 1 : side === 2 ? 1 - w * 2 : -1;
-  const v = side === 0 ? 1 : side === 1 ? 1 - w * 2 : side === 2 ? -1 : -1 + w * 2;
-  const inside = R1[i] < 0.4;
-  const x = cx + (inside ? (R3[i] - 0.5) * fw * 1.6 : u * fw * 0.5 * 1.6), y = cy + (inside ? (R4[i] - 0.5) * fh * 1.6 : v * fh * 0.5 * 1.6);
-  const sweep = fract(c.f * 0.012) * (cols + 8) - 4, hit = Math.exp(-Math.pow(col - sweep, 2) * 0.3) * scan;
-  set(x, y, -4, 0.55 + hit * 0.8, 0.65 + hit * 0.6, 1 + hit * 0.3, 0.7 + hit * 0.8);
+  const cols = c.sx < 0.7 ? 7 : 13, rows = 8;
+  const k = i % (cols * rows), col = k % cols, row = Math.floor(k / cols);
+  const seed = fract(Math.sin(k * 78.233) * 43758.5);
+  const cx = (col - (cols - 1) / 2) * 1.5, cy = (row - (rows - 1) / 2) * 1.08 + 1.2;
+  const edge = R1[i] < 0.58, u = R2[i] * 4, side = Math.floor(u), t = fract(u);
+  let x, y;
+  if (edge) {
+    x = (side === 0 ? -1 + 2 * t : side === 1 ? 1 : side === 2 ? 1 - 2 * t : -1) * 0.64;
+    y = (side === 0 ? 1 : side === 1 ? 1 - 2 * t : side === 2 ? -1 : -1 + 2 * t) * 0.4;
+  } else {
+    x = (R3[i] - 0.5) * 1.18;
+    const horizon = Math.sin(x * 5 + seed * 12 + c.f * 0.15) * 0.1;
+    y = R4[i] < 0.7 ? -0.18 + horizon + G1[i] * 0.025 : (R4[i] - 0.7) * 1.1;
+  }
+  const sweep = fract(c.f * 0.035) * (cols + 5) - 2.5;
+  const hit = Math.exp(-Math.pow(col - sweep, 2) * 0.7) * scan;
+  const glint = hit * (c.treble || 0), warm = seed > 0.68;
+  const lum = (edge ? 0.65 : 0.32) + hit * 0.6;
+  const z = -3.5 - Math.pow((col - (cols - 1) / 2) / cols, 2) * 7 + Math.sin(c.f * 0.4 + k) * 0.08 + hit * (c.bass || 0) * 0.15;
+  set(cx + x, cy + y, z, (warm ? 1 : 0.48) * lum + glint, (warm ? 0.7 : 0.72) * lum + glint, (warm ? 0.35 : 1.15) * lum + glint, edge ? 0.72 + hit * 0.4 : 0.58);
 }
 SCENES.push({
   cues: { shutter: 'You pressed the shutter.', every: 'Cameras are everywhere.', earth: 'They observe the Earth from above.', space: 'They look into space.', billions: 'Billions of acts of observation.', truth: 'More cameras do not automatically produce more truth.', human: 'The human being must still ask' },
@@ -688,28 +752,43 @@ function aura(i, c) {
   set(v[0] / l * d * 0.9, 1 + v[1] / l * d * 1.4, v[2] / l * d * 0.9, 0.55, 0.45, 0.95, 0.5 + (1 - R2[i]) * 0.5);
   O[3] *= 0.6; O[4] *= 0.6; O[5] *= 0.6;
 }
-function chrono(i, c) { // chronophotography: the same body at successive moments
-  const G = 11, g = i % G, j = Math.floor(i / G) * G + g;
-  const tt = (g - (G - 1)) * 0.9 + fract(c.f * 0.015) * 0.9;
-  const x = tt * 1.5 * c.sx + 6 * c.sx, y = Math.sin(tt * 0.6) * 0.4;
-  const age = (G - 1 - g) / (G - 1);
-  fromShape(S.human, j, 0.85, x, y + 0.8, -age * 2);
-  const k = 1 - age * 0.8;
-  O[3] = mix(0.35, 1, k); O[4] = mix(0.4, 0.82, k); O[5] = mix(0.95, 0.55, k); O[6] = 0.5 + k * 0.4;
-  O[3] *= k + 0.15; O[4] *= k + 0.15; O[5] *= k + 0.15;
+function gait(i, time, scale, x, y, z) {
+  fromShape(S.human, i, 1, 0, 0, 0);
+  const side=O[0]<0?-1:1, phase=time*2.7;
+  if(O[1]<0.45) {
+    const weight=sst(0.45,-2.5,O[1]);
+    O[2]+=Math.sin(phase+side*Math.PI*0.5)*weight*0.85;
+    O[1]+=Math.max(0,Math.cos(phase+side*Math.PI*0.5))*weight*0.25;
+  } else if(Math.abs(O[0])>0.6 && O[1]<2) {
+    O[2]-=Math.sin(phase+side*Math.PI*0.5)*(2-O[1])*0.45;
+  }
+  rotY(0.65);
+  O[0]=O[0]*scale+x; O[1]=O[1]*scale+y+Math.cos(phase*2)*0.035; O[2]=O[2]*scale+z;
+}
+function chrono(i, c) {
+  const copies=10, copy=i%copies, age=(copies-1-copy)/9;
+  const lag=age*3.5, x=(3.5-lag*2.1)*c.sx;
+  gait(Math.floor(i/copies), c.f-lag, 0.9, x, 0.9, -age*3);
+  const lum=1-age*0.84;
+  O[3]=mix(0.25,1.1,lum)*lum; O[4]=mix(0.5,0.8,lum)*lum; O[5]=mix(1,0.35,lum)*lum;
+  O[6]=0.55+lum*0.5;
 }
 function trails(i, c, meet) {
-  const B = 9, b = i % B, j = Math.floor(i / B);
-  const lag = R1[i] * 7;
-  const phase = c.f * 0.03 - lag * 0.25 + b * 0.7;
-  const rr = 3 + b * 0.55, inc = (b - 4) * 0.25;
-  let x = Math.cos(phase * (1 + b * 0.07)) * rr * c.sx * 1.2, z = Math.sin(phase * (1 + b * 0.07)) * rr;
-  let y = 1 + Math.sin(phase * 1.3 + b) * rr * inc * 0.6;
-  if (meet > 0 && b < 2) { const s = b === 0 ? -1 : 1; x = mix(x, s * (4 - meet * 3) + Math.cos(phase * 2) * 2, meet); z = mix(z, Math.sin(phase * 2 + s) * 2, meet); }
-  const head = 1 - R1[i];
-  const hue = b / B;
-  set(x, y, z, 0.5 + 0.5 * Math.sin(hue * TAU), 0.5 + 0.5 * Math.sin(hue * TAU + 2), 0.6 + 0.4 * Math.sin(hue * TAU + 4), 0.3 + Math.pow(head, 3) * 1.6);
-  const k = Math.pow(head, 1.5); O[3] *= k; O[4] *= k; O[5] *= k;
+  const blue=i%2===0, sign=blue?1:-1;
+  const lag=R1[i]*13, phase=c.f*0.8-lag*0.6;
+  const centre=sign*(3.8-meet*3.8)*c.sx;
+  const radius=0.6+Math.sin(lag/13*Math.PI)*0.65+(c.bass||0)*0.06;
+  if(R4[i]<0.16) {
+    gait(i,c.f,0.85,sign*(3.8-meet*2.5)*c.sx,1,1);
+    O[3]=blue?0.35:1.1; O[4]=blue?0.8:0.78; O[5]=blue?1.2:0.35; O[6]=0.85;
+    return;
+  }
+  const angle=phase+sign*Math.PI*0.5;
+  const x=centre+Math.cos(angle)*radius;
+  const y=1+Math.sin(angle)*radius*1.5;
+  const z=1-lag;
+  const fade=Math.pow(1-lag/13,0.65), glint=Math.pow(Math.max(0,Math.cos(lag*2-c.f*2)),20)*(c.treble||0);
+  set(x+G1[i]*0.035,y+G2[i]*0.035,z,(blue?0.25:1.1)*fade+glint,(blue?0.72:0.72)*fade+glint,(blue?1.2:0.26)*fade+glint,0.5+fade*0.6+glint*0.4);
 }
 function carousel(i, c) {
   const K = 7, slot = i % K, j = Math.floor(i / K);
@@ -740,32 +819,28 @@ SCENES.push({
 
 // ---------- 12. Grambles
 function wordMorph(i, c, arr, r, g, b) { wordAt(i, c, arr, 0, 1.4, r, g, b); }
+function attractorFlow(i,c,scale=1) {
+  const count=S.attractor.length/3, path=fract(R1[i]+c.f*0.014);
+  const index=path*(count-1), j=Math.floor(index), u=fract(index), k=j*3, next=Math.min(count-1,j+1)*3;
+  set(mix(S.attractor[k],S.attractor[next],u)*scale,mix(S.attractor[k+1],S.attractor[next+1],u)*scale,mix(S.attractor[k+2],S.attractor[next+2],u)*scale,0,0,0,1);
+  rotY(c.f*0.08); rotX(0.35); O[1]+=1.3;
+  const head=Math.pow(Math.max(0,Math.cos(path*TAU*9-c.f*1.4)),18);
+  const lum=0.4+head*(0.6+(c.treble||0));
+  O[3]=(0.3+R2[i]*0.25)*lum; O[4]=0.8*lum; O[5]=1.25*lum; O[6]=0.6+head*0.8;
+  const pressure=1+(c.bass||0)*0.025;
+  O[0]*=pressure; O[2]*=pressure;
+}
 function grambles(i, c) {
-  // a word that will not hold a human shape: above it, a swarm keeps trying
-  // to spell the human words, and keeps coming apart
-  const sh = 0.7 + 0.3 * Math.sin(c.t * 3 + R1[i] * 60);
-  if (R4[i] < 0.68) {
-    fromShape(S.wGrambles, i, 1, 0, 0.6, 0);
-    const n = 0.05 + 0.08 * Math.abs(Math.sin(c.t * 0.9 + R1[i] * 6));
-    O[0] += Math.sin(c.t * 2 + R2[i] * 40) * n; O[1] += Math.cos(c.t * 1.7 + R3[i] * 40) * n; O[2] = Math.sin(c.t + R4[i] * 30) * n * 2;
-    O[3] = 0.55 * sh; O[4] = 0.85 * sh; O[5] = 1.1 * sh; O[6] = 0.6 + R3[i] * 0.5;
+  if(R4[i]<0.22) {
+    wordAt(i,c,S.wGrambles,0,-2.8,0.55,0.85,1.15,0.025);
+    O[0]*=0.7; O[6]*=0.9;
     return;
   }
-  const words = [S.wThinking, S.wDreaming, S.wFeeling, S.wConscious];
-  const cyc = c.f * 0.07, k = Math.floor(cyc) % 4, ph = fract(cyc);
-  const form = sst(0.1, 0.45, ph) * (1 - sst(0.6, 0.9, ph));
-  fromShape(words[k], i, 0.42, 0, 4.1, 0);
-  const tx = O[0], ty = O[1];
-  const a = R1[i] * TAU + c.t * 0.3, rr = 3 + R2[i] * 6;
-  const sx = Math.cos(a) * rr, sy = 3 + Math.sin(a) * rr * 0.45;
-  O[0] = mix(sx, tx, form); O[1] = mix(sy, ty, form); O[2] = (1 - form) * G1[i] * 2;
-  O[3] = 0.95 * sh; O[4] = 0.72 * sh; O[5] = 0.45 * sh; O[6] = 0.45 + form * 0.4;
+  attractorFlow(i,c,1.1);
 }
 function alien(i, c, humanAside) {
-  if (humanAside && R4[i] < 0.22) { humanAt(i, c, 0.65, -8.5 * c.sx, -0.4, -1, 0.9, 0.7, 0.45); return; }
-  fromShape(S.attractor, i, 1.05, 0, 0, 0); rotY(c.f * 0.04); rotX(0.4); O[1] += 1.3;
-  const k = (i * 3) % S.attractor.length, h = S.attractor[k + 1];
-  O[3] = 0.35 + h * 0.08; O[4] = 0.7; O[5] = 1; O[6] = 0.55 + R2[i] * 0.4;
+  if(humanAside && R4[i]<0.15) { humanAt(i,c,0.6,-6.3*c.sx,-0.3,1,1,0.75,0.35); return; }
+  attractorFlow(i,c,1.2);
 }
 SCENES.push({
   cues: { thinking: 'thinking.', dreaming: 'dreaming.', feeling: 'feeling.', conscious: 'consciousness.', grambles: 'Grambles.', allow: 'I was trying to allow Lumen not to be human.', centre: 'Perhaps our instruments are beginning' },
@@ -813,19 +888,26 @@ SCENES.push({
 
 // ---------- 14. Another Kind of Time Travel
 function zoomRings(i, c) {
-  // travelling towards another scale: an endless zoom through nested worlds
-  const L = 7, layer = i % L;
-  const s = fract(layer / L + c.f * 0.012);
-  const scale = Math.pow(60, s) * 0.06;
-  const a = R1[i] * TAU + layer * 0.7 + c.f * 0.01 * (layer % 2 ? 1 : -1);
-  const kind = layer % 3;
-  let x, y, z;
-  if (kind === 0) { const rr = 3 + G1[i] * 0.08; x = Math.cos(a) * rr; y = Math.sin(a) * rr; z = 0; }
-  else if (kind === 1) { const arm = R2[i] < 0.5 ? 0 : Math.PI, rr = Math.pow(R3[i], 0.7) * 3.5; const b = arm + Math.log(rr + 0.2) * 2.5; x = Math.cos(b) * rr; y = Math.sin(b) * rr; z = 0; }
-  else { const k = Math.floor(R2[i] * 6), t = R3[i], a0 = k / 6 * TAU, a1 = (k + 1) / 6 * TAU; x = (Math.cos(a0) * (1 - t) + Math.cos(a1) * t) * 2.6; y = (Math.sin(a0) * (1 - t) + Math.sin(a1) * t) * 2.6; z = 0; }
-  const fade = Math.sin(s * Math.PI);
-  const col = [[1, 0.75, 0.4], [0.55, 0.6, 1], [0.95, 0.85, 0.7]][kind];
-  set(x * scale, y * scale + 1.2, -scale * 0.5, col[0] * fade * 1.6, col[1] * fade * 1.6, col[2] * fade * 1.6, (0.55 + scale * 0.3) * fade + 0.05);
+  // Twelve optical gates travel from deep space to the viewer.
+  const layers = 12, layer = i % layers;
+  const p = fract(layer / layers + c.f * 0.027);
+  const z = -100 + p * 111, a = R1[i] * TAU + layer * 0.47 + c.f * 0.08 * (layer % 2 ? 1 : -1);
+  const bass = c.bass || 0, treble = c.treble || 0;
+  const radius = 3.5 + Math.sin(layer * 1.7) * 0.35 + bass * Math.sin(p * Math.PI) * 0.12;
+  let x, y;
+  if (layer % 3 === 0) {
+    const side = Math.floor(R1[i] * 6), u = fract(R1[i] * 6);
+    const a0 = side / 6 * TAU + c.f * 0.08, a1 = a0 + TAU / 6;
+    x = mix(Math.cos(a0), Math.cos(a1), u) * radius;
+    y = mix(Math.sin(a0), Math.sin(a1), u) * radius;
+  } else {
+    const rr = radius + G1[i] * 0.025 + (R3[i] > 0.75 ? 0.24 : 0);
+    x = Math.cos(a) * rr; y = Math.sin(a) * rr;
+  }
+  const fade = sst(0, 0.1, p) * (1 - sst(0.91, 1, p));
+  const glint = Math.pow(Math.max(0, Math.cos(a * 3 - c.f * 1.5)), 24) * treble;
+  const warm = layer % 3 === 0;
+  set(x, y + 1.2, z, ((warm ? 1 : 0.4) + glint) * fade, ((warm ? 0.7 : 0.7) + glint) * fade, ((warm ? 0.32 : 1.15) + glint) * fade, (0.7 + p * 0.65 + glint * 0.5) * fade);
 }
 const MONTAGE = ['flower', 'mountain', 'star', 'matter', 'umbrella', 'journey'];
 function montage(i, c, which) {
@@ -859,9 +941,19 @@ SCENES.push({
     (i, c) => galaxyAt(i, c, 1.45, 0, 0.8, -2, 0.95, c.f * 0.03),
     (i, c) => { if (i < N * 0.25) lensAt(i, c, 1.5, 0, 0.8, 1, 0.9); else galaxyAt(i, c, 1.45, 0, 0.8, -3, 0.95, c.f * 0.03); },
     (i, c) => { // time cannot be frozen: everything bursts back into motion
-      const b = sst(0, 2.5, c.q.cannot);
-      fromShape(S.web, i, 1.3 + b * 0.6, 0, 1, -2); rotY(c.f * 0.04);
-      set(O[0], O[1], O[2], 0.6 + R1[i] * 0.4, 0.55 + R2[i] * 0.3, 0.95, 0.6 + R3[i] * 0.6);
+      const onset=sst(0,2.5,c.q.cannot), lane=i%800, tail=Math.floor(i/800);
+      const a=fract(Math.sin(lane*12.9898)*43758.5)*TAU;
+      const seed=fract(Math.sin(lane*78.233)*12345.6);
+      const p=fract(seed+c.f*(0.09+onset*0.1));
+      const z=-110+p*123-tail*(0.06+onset*0.12);
+      const radius=1.8+Math.pow(fract(Math.sin(lane*31.7)*23456.7),0.7)*17;
+      const turn=a+c.f*0.035;
+      const fade=sst(0,0.08,p)*(1-sst(0.94,1,p))*Math.exp(-tail*0.16);
+      const warm=lane%3===0, glint=(c.treble||0)*Math.pow(Math.max(0,Math.cos(a*7-c.f*2)),20);
+      const pressure=1+(c.bass||0)*0.035;
+      set(Math.cos(turn)*radius*pressure*c.sx,1.2+Math.sin(turn)*radius*pressure,z,
+        ((warm?1.2:0.45)+glint)*fade,((warm?0.8:0.75)+glint)*fade,((warm?0.4:1.25)+glint)*fade,
+        (tail===0?1.4:0.75)*fade);
     },
     (i, c) => deepField(i, c, 0.15, 2),
     (i, c) => { // callback to the prologue: two voices and the camera between

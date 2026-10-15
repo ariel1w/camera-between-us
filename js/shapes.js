@@ -68,20 +68,33 @@ export function animal(n, seed = 12) {
 }
 
 export function tree(n, seed = 13) {
-  const r = rng(seed), caps = [];
-  function branch(x, y, z, dx, dy, dz, len, rad, depth) {
-    const x2 = x + dx * len, y2 = y + dy * len, z2 = z + dz * len;
-    caps.push([x, y, z, x2, y2, z2, rad, 0]);
-    if (depth === 0) { caps.push([x2, y2, z2, x2, y2 + 0.1, z2, 0.24 + r() * 0.12, 1]); return; }
-    const kids = depth > 3 ? 2 : 2 + (r() < 0.5 ? 1 : 0);
-    for (let k = 0; k < kids; k++) {
-      let nx = dx + (r() - 0.5) * 1.5, ny = dy + 0.35 + (r() - 0.5) * 0.4, nz = dz + (r() - 0.5) * 1.5;
-      const l = Math.hypot(nx, ny, nz); nx /= l; ny /= l; nz /= l;
-      branch(x2, y2, z2, nx, ny, nz, len * 0.74, rad * 0.66, depth - 1);
-    }
+  const r = rng(seed), wood = [], tips = [];
+  // Separate scaffolding and foliage budgets preserve visible limbs.
+  wood.push([0,-3.4,0, 0.12,-0.8,0.08, 0.25,0]);
+  function limb(x,y,z,a,e,len,rad,depth) {
+    const dx=Math.cos(a)*Math.cos(e), dz=Math.sin(a)*Math.cos(e);
+    const xx=x+dx*len, yy=y+Math.sin(e)*len, zz=z+dz*len;
+    wood.push([x,y,z,xx,yy,zz,rad,0]);
+    if (!depth) { tips.push([xx,yy,zz]); return; }
+    for(let k=0;k<3;k++) limb(xx,yy,zz,a+(k-1)*0.8+(r()-0.5)*0.3,
+      Math.min(1.35,e+(r()-0.4)*0.55),len*0.64,rad*0.58,depth-1);
   }
-  branch(0, -3.4, 0, 0, 1, 0, 2.0, 0.3, 5);
-  return sampleCapsules(caps, n, seed);
+  for(let tier=0;tier<3;tier++) for(let k=0;k<5;k++) {
+    const a=k/5*Math.PI*2+tier*1.13;
+    limb(0.1,-1.25+tier*0.85,0.05,a,0.32+tier*0.2,2.1-tier*0.25,0.16-tier*0.025,2);
+  }
+  limb(0.1,0.2,0.05,0,1.4,1.8,0.15,2);
+  const count=Math.floor(n*0.46), sampled=sampleCapsules(wood,count,seed);
+  const pts=new Float32Array(n*3), tags=new Uint8Array(n);
+  pts.set(sampled.pts);
+  for(let i=count;i<n;i++) {
+    const tip=tips[Math.floor(r()*tips.length)], v=unitVec(r), rr=Math.cbrt(r());
+    pts[i*3]=tip[0]+v[0]*rr*0.43;
+    pts[i*3+1]=tip[1]+v[1]*rr*0.5;
+    pts[i*3+2]=tip[2]+v[2]*rr*0.43;
+    tags[i]=1;
+  }
+  return {pts,tags};
 }
 
 export function gear(n, seed = 14) {

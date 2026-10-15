@@ -18,7 +18,7 @@ export class Presence {
     if (!this.w) return;
     this.act += ((speaking ? 1 : 0.18) - this.act) * Math.min(1, dt * 3.5);
     this.spin += dt * (0.15 + this.act * 0.6);
-    if (speaking && pulse > this.lastPulse + 0.25) this.ripples.push({ r: 0, a: 1 });
+    if (speaking && pulse > this.lastPulse + 0.25) this.ripples.length < 6 && this.ripples.push({ r: 0, a: 1 });
     this.lastPulse = pulse * 0.92;
     const g = this.g; g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, this.w, this.h);
     g.translate(this.w / 2, this.h / 2); const s = this.w / 120; g.scale(s, s);
@@ -80,17 +80,18 @@ export class Presence {
   }
 
   lumen(g, t, pulse) {
-    const A = this.act, B = 0.35 + 0.65 * A + pulse * 0.25;
+    const A = this.act, P = Math.min(1.2, Math.max(0, pulse || 0)) * A, B = 0.4 + 0.6 * A + P * 0.5;
     g.globalCompositeOperation = 'lighter';
     // outer bloom
     const halo = g.createRadialGradient(0, 0, 2, 0, 0, 58);
     halo.addColorStop(0, `rgba(170,220,255,${0.32 * B})`); halo.addColorStop(0.4, `rgba(80,150,255,${0.12 * B})`); halo.addColorStop(1, 'rgba(40,90,255,0)');
     g.fillStyle = halo; g.beginPath(); g.arc(0, 0, 58, 0, TAU); g.fill();
     // anamorphic flare: a long thin streak of light
-    for (const [w, a] of [[58, 0.18], [40, 0.4], [22, 0.8]]) {
+    for (const [w, a] of [[59, 0.4], [46, 0.65], [28, 0.95]]) {
       const fl = g.createLinearGradient(-w, 0, w, 0);
       fl.addColorStop(0, 'rgba(120,190,255,0)'); fl.addColorStop(0.5, `rgba(220,240,255,${a * B})`); fl.addColorStop(1, 'rgba(120,190,255,0)');
-      g.fillStyle = fl; g.fillRect(-w, -0.9 - (w === 58 ? 0.3 : 0), w * 2, 1.8 + (w === 58 ? 0.6 : 0));
+      const fh = 0.8 + P * 1.6 + (w === 28 ? 0.8 : 0);
+      g.fillStyle = fl; g.fillRect(-w, -fh, w * 2, fh * 2);
     }
     // rays, turning slowly: four long, eight faint
     g.save(); g.rotate(this.spin * 0.25);
@@ -113,11 +114,27 @@ export class Presence {
         g.beginPath(); g.arc(x, y, 1.3 - tr * 0.15, 0, TAU); g.fill();
       }
     }
-    // the core: white-hot, breathing with the music
-    const cr = 7 + 3 * B + pulse * 2;
-    const core = g.createRadialGradient(0, 0, 0, 0, 0, cr * 2.2);
-    core.addColorStop(0, `rgba(255,255,255,${0.95})`); core.addColorStop(0.35, `rgba(215,238,255,${0.8 * B + 0.2})`); core.addColorStop(1, 'rgba(110,180,255,0)');
-    g.fillStyle = core; g.beginPath(); g.arc(0, 0, cr * 2.2, 0, TAU); g.fill();
+    // Open caustic ribbons keep the being airy, with no solid sphere.
+    for (let k = 0; k < 5; k++) {
+      const phase = t * (0.32 + k * 0.055) + k * 1.23;
+      g.beginPath();
+      for (let j = 0; j <= 96; j++) {
+        const a = j / 96 * TAU, rr = 21 + k * 3 + 5 * Math.sin(a * 3 + phase);
+        const x = Math.cos(a) * rr, y = Math.sin(a) * rr * 0.48 + Math.sin(a * 2 - phase) * 9;
+        const cs = Math.cos(phase * 0.4), sn = Math.sin(phase * 0.4);
+        if (!j) g.moveTo(x * cs - y * sn, x * sn + y * cs);
+        else g.lineTo(x * cs - y * sn, x * sn + y * cs);
+      }
+      g.strokeStyle = `rgba(${145 + k * 20},220,255,${0.18 + B * 0.24})`;
+      g.lineWidth = k === 2 ? 1.1 : 0.6; g.stroke();
+    }
+    const cx = Math.cos(t * 0.8) * 2, cy = Math.sin(t * 1.1) * 2, cr = 17 + A * 4 + P * 8;
+    const core = g.createRadialGradient(cx, cy, 0, cx, cy, cr);
+    core.addColorStop(0, 'rgba(255,255,255,1)');
+    core.addColorStop(0.22, 'rgba(255,255,255,1)');
+    core.addColorStop(0.42, `rgba(200,235,255,${Math.min(1, B * 0.9)})`);
+    core.addColorStop(1, 'rgba(110,180,255,0)');
+    g.fillStyle = core; g.beginPath(); g.arc(cx, cy, cr, 0, TAU); g.fill();
     g.globalCompositeOperation = 'source-over';
   }
 }

@@ -3,10 +3,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SECTIONS } from './content.js?v=9';
-import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=9';
-import { Score } from './audio.js?v=9';
-import { Presence } from './presences.js?v=9';
+import { SECTIONS } from './content.js?v=10';
+import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=10';
+import { Score } from './audio.js?v=10';
+import { Presence } from './presences.js?v=10';
 
 const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 600;
@@ -106,25 +106,42 @@ const POS = new Float32Array(N * 3), COL = new Float32Array(N * 3), SIZ = new Fl
 geo.setAttribute('position', new THREE.BufferAttribute(POS, 3).setUsage(THREE.DynamicDrawUsage));
 geo.setAttribute('color', new THREE.BufferAttribute(COL, 3).setUsage(THREE.DynamicDrawUsage));
 geo.setAttribute('aSize', new THREE.BufferAttribute(SIZ, 1).setUsage(THREE.DynamicDrawUsage));
+// particles are written in a shuffled buffer order, so lowering quality (draw range)
+// thins every scene evenly instead of dropping whole roles
+const PERM = new Uint32Array(N); { for (let i = 0; i < N; i++) PERM[i] = i; for (let i = N - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = PERM[i]; PERM[i] = PERM[j]; PERM[j] = t; } }
+const PREV = new Float32Array((MOBILE ? 350 : 1200) * 3);
+const SEED = new Float32Array(N); for (let i = 0; i < N; i++) SEED[i] = Math.random();
+geo.setAttribute('aSeed', new THREE.BufferAttribute(SEED, 1));
 const pMat = new THREE.ShaderMaterial({
-  uniforms: { uScale: { value: 1 }, uExp: { value: 1 }, uMax: { value: 56 } },
+  uniforms: { uScale: { value: 1 }, uExp: { value: 1 }, uMax: { value: 64 }, uTime: { value: 0 }, uSpark: { value: 0 } },
   vertexShader: `
-    attribute float aSize; attribute vec3 color; varying vec3 vC; varying float vA;
+    attribute float aSize; attribute float aSeed; attribute vec3 color; varying vec3 vC; varying float vA; varying float vSeed;
     uniform float uScale; uniform float uExp; uniform float uMax;
     void main(){
       vec4 mv = modelViewMatrix * vec4(position, 1.0);
       gl_Position = projectionMatrix * mv;
       float d = -mv.z;
-      gl_PointSize = aSize <= 0.001 || d < 0.2 ? 0.0 : min(uMax, aSize * uScale / d);
-      vA = smoothstep(0.3, 2.5, d);
-      vC = color * uExp;
+      float big = step(0.985, aSeed) * 1.8 + 1.0;
+      gl_PointSize = aSize <= 0.001 || d < 0.2 ? 0.0 : min(uMax, aSize * big * 1.45 * uScale / d);
+      vA = smoothstep(0.3, 2.5, d) * (1.0 - smoothstep(160.0, 380.0, d));
+      vC = color * uExp; vSeed = aSeed;
     }`,
   fragmentShader: `
-    varying vec3 vC; varying float vA;
+    varying vec3 vC; varying float vA; varying float vSeed;
+    uniform float uTime; uniform float uSpark;
     void main(){
-      float r = length(gl_PointCoord - 0.5);
-      float a = smoothstep(0.5, 0.0, r); a = a * a * vA;
-      gl_FragColor = vec4(vC, a);
+      vec2 p = (gl_PointCoord - 0.5) * 2.0;
+      float r2 = dot(p, p);
+      if (r2 > 1.0) discard;
+      float core = exp(-r2 * 16.0);
+      float halo = exp(-r2 * 3.2) * 0.22;
+      float rare = step(0.985, vSeed);
+      float tw = pow(max(0.0, sin(uTime * 2.1 + vSeed * 91.0)), 14.0);
+      float cross = exp(-abs(p.x) * 26.0) * exp(-abs(p.y) * 2.6) + exp(-abs(p.y) * 26.0) * exp(-abs(p.x) * 2.6);
+      float spark = rare * (0.35 + tw * 0.9 + uSpark * 0.8);
+      float a = (core + halo + cross * spark * 0.55) * vA;
+      vec3 col = vC * (1.0 + spark * 0.6) + vec3(0.08, 0.06, 0.12) * spark * tw;
+      gl_FragColor = vec4(col, min(a, 1.0));
     }`,
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
 });
@@ -143,9 +160,30 @@ scene.add(points);
     s[i] = 6 + Math.random() * 16;
   }
   g.setAttribute('position', new THREE.BufferAttribute(p, 3)); g.setAttribute('color', new THREE.BufferAttribute(c, 3)); g.setAttribute('aSize', new THREE.BufferAttribute(s, 1));
+  const sd = new Float32Array(n); for (let i = 0; i < n; i++) sd[i] = Math.random(); g.setAttribute('aSeed', new THREE.BufferAttribute(sd, 1));
   var bgStars = new THREE.Points(g, pMat); bgStars.frustumCulled = false; scene.add(bgStars);
 }
 
+// painted skies far behind the light, one per section, crossfading
+const SKY_FILES = ['violet-deep', 'amber-dust', 'nebula-gold', 'cosmos-blue', 'milkyway'];
+const SKY_OF = [0, 1, 2, 3, 1, 4, 2, 0, 3, 3, 0, 2, 0, 4, 3, 2];
+const SKY_LEVEL = [0.55, 0.5, 0.55, 0.55, 0.5, 0.75, 0.65, 0.5, 0.45, 0.5, 0.55, 0.6, 0.5, 0.65, 0.6, 0.75];
+const skyLoader = new THREE.TextureLoader();
+const skies = SKY_FILES.map((name, k) => {
+  const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+  skyLoader.load('img/bg-' + name + '.jpg?v=10', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(680, 383), mat);
+  mesh.position.z = -175; mesh.renderOrder = -10; mesh.visible = false; mesh.frustumCulled = false;
+  scene.add(mesh);
+  return { mesh, mat, op: 0, spin: (k % 2 ? 1 : -1) * 0.0016 };
+});
+// light trails: fine comets that appear when particles move fast
+const TR = MOBILE ? 350 : 1200;
+const trGeo = new THREE.BufferGeometry(), trPos = new Float32Array(TR * 6), trCol = new Float32Array(TR * 6);
+trGeo.setAttribute('position', new THREE.BufferAttribute(trPos, 3).setUsage(THREE.DynamicDrawUsage));
+trGeo.setAttribute('color', new THREE.BufferAttribute(trCol, 3).setUsage(THREE.DynamicDrawUsage));
+const trails = new THREE.LineSegments(trGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false }));
+trails.frustumCulled = false; trails.matrixAutoUpdate = false; scene.add(trails);
 // warp streaks: speed made visible
 const WS = MOBILE ? 220 : 500;
 const wGeo = new THREE.BufferGeometry(), wPos = new Float32Array(WS * 6), wData = [];
@@ -210,7 +248,7 @@ const film = new ShaderPass({
       col *= 1.0 - sin(uv.y * 1100.0 + uTime * 40.0) * 0.05 * uRev;
       col = mix(col, col * vec3(0.8, 1.0, 1.25), uRev * 0.55);
       col += (h(uv * 1000.0 + fract(uTime * 7.3)) - 0.5) * uGrain;
-      col *= smoothstep(1.05, 0.25, r * (1.0 + uDark));
+      col *= 1.0 - smoothstep(0.25, 1.05, r * (1.0 + uDark));
       col = col + uFlash;
       gl_FragColor = vec4(col, 1.0);
     }`,
@@ -250,7 +288,7 @@ function resize() {
   pMat.uniforms.uScale.value = renderer.getDrawingBufferSize(new THREE.Vector2()).y * 0.075;
   $('#track').style.height = (total * UNIT + innerHeight) + 'px';
 }
-addEventListener('resize', resize);
+addEventListener('resize', () => { resize(); for (const el of els || []) if (el) el._spot = null; });
 resize();
 
 // ------------------------------------------------------------ text layer
@@ -348,7 +386,7 @@ let mouseX = 0, mouseY = 0, flying = null, lastSlot = -1, expo = 1, auto = false
 const score = new Score();
 // the picture breathes with the music: every note sends a pulse of light
 let pulse = 0, camKick = 0, warpKick = 0, shutNow = 0;
-score.onNote = (gain, bass) => { pulse = Math.min(1, pulse + gain * (bass ? 1.6 : 0.9)); };
+let bassPulse = 0, treblePulse = 0, sceneTime = 0;
 const tmpV = new THREE.Vector3();
 
 addEventListener('pointermove', e => { mouseX = e.clientX / innerWidth - 0.5; mouseY = e.clientY / innerHeight - 0.5; });
@@ -426,9 +464,29 @@ const EVENTS = [
 ].map(([si, txt, fn]) => {
   const li = SECTIONS[si].lines.findIndex(l => l.t.startsWith(txt));
   if (li < 0) console.warn('event line missing', txt);
-  return { slot: secInfo[si].lineSlot0 + li, fn };
-});
+  return { slot: li < 0 ? -1 : secInfo[si].lineSlot0 + li, fn };
+}).filter(e => e.slot >= 0);
 
+// camera flights: each section has its own move (p = progress through the section)
+const camOut = new THREE.Vector3(), camAim = new THREE.Vector3(), aimNow = new THREE.Vector3(0, 1, 0);
+const CAMS = [
+  (p, f) => { camOut.set(Math.sin(f * 0.02) * 1.2, 0.8, mix(18, 12.5, p)); camAim.set(0, 1.2, 0); },                         // prologue: slow push in
+  (p, f) => { camOut.set(Math.sin(f * 0.03) * 2.2, 1 + Math.sin(f * 0.021) * 1.2, 15); camAim.set(Math.sin(f * 0.03 + 0.4) * 3, 1, -30); }, // down the film tunnel
+  (p, f) => { const a = mix(-0.55, 0.55, p) + Math.sin(f * 0.01) * 0.1; camOut.set(Math.sin(a) * 14.5, mix(1, 4.2, sst(0.45, 1, p)), Math.cos(a) * 14.5); camAim.set(0, mix(1.2, -0.5, sst(0.45, 1, p)), 0); }, // round the flower, up over the mountain
+  (p, f) => { const a = mix(-0.9, 0.9, p); camOut.set(Math.sin(a) * 13.5, 1.2 + Math.sin(f * 0.02) * 0.8, Math.cos(a) * 13.5); camAim.set(0, 1.2, 0); }, // circling every changing thing
+  (p, f) => { camOut.set(mix(-5, 5, p), 0.8 + Math.sin(f * 0.02), 14); camAim.set(mix(-2, 2, p), 0.6, 0); },                  // a sideways dolly through matter
+  (p, f) => { camOut.set(Math.sin(f * 0.012) * 1.5, mix(0.2, -1.2, p), mix(15, 10, p)); camAim.set(0, mix(2, 4, p), -10); },    // looking up at the night sky
+  (p, f) => { camOut.set(Math.sin(f * 0.025) * 2.5, 1 + Math.sin(f * 0.018), 14); camAim.set(Math.sin(f * 0.025 + 0.3) * 3, 1, -40); }, // flying into deep time
+  (p, f) => { camOut.set(Math.sin(f * 0.015) * 1.5, 1.2, 15); camAim.set(0, 1.3, 0); },                                         // the portals
+  (p, f) => { camOut.set(Math.sin(f * 0.02) * 1.2, 1, mix(16, 9.5, p)); camAim.set(0, 1.2, 0); },                               // pushing into the rain
+  (p, f) => { camOut.set(Math.sin(f * 0.015) * 2, mix(0.6, 3.2, sst(0.45, 1, p)), mix(14, 16.5, sst(0.45, 1, p))); camAim.set(0, mix(0.8, -0.8, sst(0.45, 1, p)), 0); }, // craning up over the lives
+  (p, f) => { const a = mix(-0.5, 0.5, p); camOut.set(Math.sin(a) * 14, 1 + Math.sin(f * 0.02) * 1.2, Math.cos(a) * 14); camAim.set(0, 1, -4); }, // among the cameras
+  (p, f) => { camOut.set(mix(5, -5, p), 1.1, 13.5); camAim.set(mix(3, -3, p), 1, 0); },                                         // tracking beside the walker
+  (p, f) => { camOut.set(Math.sin(f * 0.02) * 1.5, 1.3, mix(16, 10, p)); camAim.set(0, 1.3, 0); },                             // into the unnamed
+  (p, f) => { camOut.set(Math.sin(f * 0.012) * 2.5, 1.4, 16); camAim.set(0, 1.3, 0); },                                         // wide on the two of them
+  (p, f) => { camOut.set(Math.sin(f * 0.03) * 2, 1 + Math.sin(f * 0.022), 14); camAim.set(Math.sin(f * 0.03 + 0.5) * 2.5, 1, -40); }, // through the gates of scale
+  (p, f) => { camOut.set(Math.sin(f * 0.01) * 2, mix(1, 3.5, p), mix(12, 21, p)); camAim.set(0, mix(1, 0.5, p), 0); },           // rising and pulling back
+];
 // the arc of the score: intimate at the start, opening up, majestic at the end
 const INTENSITY = [0.22, 0.32, 0.38, 0.45, 0.42, 0.55, 0.6, 0.45, 0.5, 0.6, 0.62, 0.55, 0.5, 0.66, 0.72, 0.6];
 
@@ -484,7 +542,7 @@ function frame(now) {
   if (introT >= 0) {
     introT += Math.min(0.5, realDt);
     intro = Math.min(1, introT / 2.6);
-    if (introT >= 2.6 && apertureOpen === 0) { score.boom(); flash = 1; apertureOpen = 0.0001; burst = 1; }
+    if (introT >= 2.6 && apertureOpen === 0 && (score.ready || introT > 4.5)) { score.boom(); flash = 1; apertureOpen = 0.0001; burst = 1; }
     if (apertureOpen > 0 && apertureOpen < 1) apertureOpen = Math.min(1, apertureOpen + Math.min(0.5, realDt) * 2.6);
     if (introT > 3.4 && !started) { started = true; document.documentElement.classList.remove('locked'); $('#hint').classList.remove('gone'); $('#hud').classList.add('on'); $('#deck').classList.add('on'); lastMove = performance.now(); }
   }
@@ -494,9 +552,11 @@ function frame(now) {
 
   // contexts for the two states being blended
   const sx = Math.max(0.42, Math.min(1.15, camera.aspect / 1.78));
-  for (const c of [cA, cB]) { c.t = t; c.f = flow; c.sx = sx; c.intro = intro; c.burst = burst; c.choice = choice; }
-  let fa, fb, m;
+  sceneTime += dt * (1 - shut * 0.97);
+  for (const c of [cA, cB]) { c.t = sceneTime; c.f = flow; c.sx = sx; c.intro = intro; c.burst = burst; c.choice = choice; c.bass = bassPulse; c.treble = treblePulse; }
+  let fa, fb, m, cross = false;
   if (lp < -0.15 && si > 0) {
+    cross = true;
     const ps = SCENES[si - 1], pinf = secInfo[si - 1];
     fa = ps.states[ps.seq[ps.seq.length - 1][1]]; cA.q = pinf.endQ;
     fb = sc.states[sc.seq[0][1]]; cB.q = q;
@@ -510,6 +570,7 @@ function frame(now) {
   }
 
   // move every particle
+  for (let k2 = 0; k2 < TR; k2++) { const sl = Math.floor(k2 * N / TR) * 3; PREV[k2 * 3] = POS[sl]; PREV[k2 * 3 + 1] = POS[sl + 1]; PREV[k2 * 3 + 2] = POS[sl + 2]; }
   for (let i = 0; i < N; i++) {
     let w = m >= 1 ? 1 : m <= 0 ? 0 : Math.min(1, Math.max(0, m * 1.6 - ((i * 0.6180339) % 1) * 0.6));
     w = w * w * (3 - 2 * w);
@@ -518,16 +579,43 @@ function frame(now) {
       fa(i, cA); x = O[0]; y = O[1]; z = O[2]; r = O[3]; g = O[4]; b = O[5]; s = O[6];
       if (w > 0) {
         fb(i, cB);
-        // particles arc through space as they travel between shapes
-        const lift = Math.sin(w * Math.PI) * 1.4 * (((i * 0.7548776) % 1) - 0.5);
-        x += (O[0] - x) * w + lift; y += (O[1] - y) * w + lift * 0.6; z += (O[2] - z) * w;
-        r += (O[3] - r) * w; g += (O[4] - g) * w; b += (O[5] - b) * w; s += (O[6] - s) * w;
+        if (cross) {
+          // between sections every particle pours through one glowing aperture
+          const h = (i * 0.6180339) % 1, a = h * 6.2831853, u = 1 - w;
+          const tx = Math.cos(a) * 0.6, ty = 1.2 + Math.sin(a) * 0.6, tz = -6;
+          x = u * u * x + 2 * u * w * tx + w * w * O[0];
+          y = u * u * y + 2 * u * w * ty + w * w * O[1];
+          z = u * u * z + 2 * u * w * tz + w * w * O[2];
+          const flare = Math.pow(Math.sin(Math.PI * w), 6);
+          r += (O[3] - r) * w + flare * 0.25; g += (O[4] - g) * w + flare * 0.22; b += (O[5] - b) * w + flare * 0.35; s += (O[6] - s) * w + flare * 0.4;
+        } else {
+          // particles arc through space as they travel between shapes
+          const lift = Math.sin(w * Math.PI) * 1.4 * (((i * 0.7548776) % 1) - 0.5);
+          x += (O[0] - x) * w + lift; y += (O[1] - y) * w + lift * 0.6; z += (O[2] - z) * w;
+          r += (O[3] - r) * w; g += (O[4] - g) * w; b += (O[5] - b) * w; s += (O[6] - s) * w;
+        }
       }
     } else { fb(i, cB); x = O[0]; y = O[1]; z = O[2]; r = O[3]; g = O[4]; b = O[5]; s = O[6]; }
-    const j = i * 3;
-    POS[j] = x; POS[j + 1] = y; POS[j + 2] = z; COL[j] = r; COL[j + 1] = g; COL[j + 2] = b; SIZ[i] = s;
+    const pi = PERM[i], j = pi * 3;
+    POS[j] = x; POS[j + 1] = y; POS[j + 2] = z; COL[j] = r; COL[j + 1] = g; COL[j + 2] = b; SIZ[pi] = s;
   }
   geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true; geo.attributes.aSize.needsUpdate = true;
+  // trails: a head at the particle, a tail where it was, only when it really moved
+  {
+    const stretch = Math.min(3.5, 0.05 / Math.max(dt, 0.008));
+    let any = 0;
+    for (let k2 = 0; k2 < TR; k2++) {
+      const sl = Math.floor(k2 * N / TR), j = sl * 3, o = k2 * 6;
+      const dx = POS[j] - PREV[k2 * 3], dy = POS[j + 1] - PREV[k2 * 3 + 1], dz = POS[j + 2] - PREV[k2 * 3 + 2];
+      const d = Math.hypot(dx, dy, dz), ok = SIZ[sl] > 0.001 && d > 0.02 && d < 2.5;
+      trPos[o] = POS[j]; trPos[o + 1] = POS[j + 1]; trPos[o + 2] = POS[j + 2];
+      trPos[o + 3] = POS[j] - (ok ? dx * stretch : 0); trPos[o + 4] = POS[j + 1] - (ok ? dy * stretch : 0); trPos[o + 5] = POS[j + 2] - (ok ? dz * stretch : 0);
+      const k = ok ? Math.min(1, d * 6) * 0.6 * pMat.uniforms.uExp.value : 0; if (ok) any++;
+      trCol[o] = COL[j] * k; trCol[o + 1] = COL[j + 1] * k; trCol[o + 2] = COL[j + 2] * k; trCol[o + 3] = 0; trCol[o + 4] = 0; trCol[o + 5] = 0;
+    }
+    trails.visible = any > 8;
+    if (trails.visible) { trGeo.attributes.position.needsUpdate = true; trGeo.attributes.color.needsUpdate = true; }
+  }
   // auto exposure: the more tightly packed the shape on screen, the dimmer each particle
   {
     let n = 0, mx = 0, my = 0, m2 = 0;
@@ -575,21 +663,57 @@ function frame(now) {
 
   // camera: parallax, speed, and a shake when you really fly
   const shake = Math.max(0, av - 12) * 0.004;
-  camKick *= Math.exp(-dt * 1.4); warpKick *= Math.exp(-dt * 1.8); pulse *= Math.exp(-dt * 3.2);
-  const orbitX = Math.sin(flow * 0.013 + 1) * 2.6, orbitY = Math.sin(flow * 0.009) * 0.9;
-  camera.position.x += ((mouseX * 1.6 + orbitX) + (Math.random() - 0.5) * shake - camera.position.x) * Math.min(1, dt * 2.5);
-  camera.position.y += ((0.6 - mouseY * 0.9 + orbitY) + (Math.random() - 0.5) * shake - camera.position.y) * Math.min(1, dt * 2.5);
-  camera.position.z = (MOBILE && camera.aspect < 1 ? 17 : 14) + Math.sin(flow * 0.011) * 1.4 - camKick * 2.6 + warpKick * 1.5;
+  camKick *= Math.exp(-dt * 1.4); warpKick *= Math.exp(-dt * 1.8);
+  bassPulse *= Math.exp(-dt * 4.5); treblePulse *= Math.exp(-dt * 8);
+  if (score.ready && score.visualEvents) {
+    const an = score.ctx.currentTime;
+    score.visualEvents = score.visualEvents.filter(ev => {
+      if (ev.at > an) return true;
+      if (an - ev.at < 0.2) { if (ev.bass) bassPulse = Math.min(1.2, Math.max(bassPulse, ev.gain * 2.4)); else treblePulse = Math.min(1, Math.max(treblePulse, ev.gain * 3)); }
+      return false;
+    });
+  }
+  pulse = Math.min(1, bassPulse * 0.8 + treblePulse * 0.5);
+  pMat.uniforms.uSpark.value = treblePulse; pMat.uniforms.uTime.value = t;
+  {
+    const secP = Math.min(1, Math.max(0, (pos - info.start) / (info.end - info.start)));
+    (CAMS[si] || CAMS[0])(secP, flow);
+    if (MOBILE && camera.aspect < 1) camOut.z += 3;
+    // toward the subject on hero lines, back on a light-speed rush
+    const toAim = camAim.clone().sub(camOut).normalize();
+    camOut.addScaledVector(toAim, camKick * 2.6 - warpKick * 1.5);
+    camOut.x += mouseX * 1.2 + (Math.random() - 0.5) * shake; camOut.y += -mouseY * 0.7 + (Math.random() - 0.5) * shake;
+    const follow = 1 - Math.exp(-dt * 2.2);
+    camera.position.lerp(camOut, follow); aimNow.lerp(camAim, follow);
+  }
   camera.fov += ((58 + Math.min(av, 30) * 0.75 + warpKick * 16 - camKick * 5) - camera.fov) * Math.min(1, dt * 4);
   camera.updateProjectionMatrix();
-  camera.lookAt(0, 1, 0);
+  camera.lookAt(aimNow);
+  // the painted skies: drift, parallax against the camera, bloom on the bass, zoom at light speed
+  {
+    const want = SKY_OF[si], lvl = (started ? SKY_LEVEL[si] : 0.25 * intro) * (1 - shut * 0.6);
+    for (let k = 0; k < skies.length; k++) {
+      const sk = skies[k], target = k === want ? lvl : 0;
+      sk.op += (target - sk.op) * Math.min(1, dt * 1.2);
+      sk.mesh.visible = sk.op > 0.005 && !!sk.mat.map;
+      if (!sk.mesh.visible) continue;
+      sk.mat.opacity = Math.min(1, sk.op * (1 + bassPulse * 0.25));
+      sk.mesh.position.x = camera.position.x * 0.55 + aimNow.x * 0.6; sk.mesh.position.y = camera.position.y * 0.55 + aimNow.y * 0.3;
+      sk.mesh.position.z = camera.position.z - 190;
+      const zoom = 1 + Math.min(av, 30) * 0.006 + warpKick * 0.12;
+      sk.mesh.scale.set(zoom, zoom, 1);
+      sk.mesh.lookAt(camera.position); sk.mesh.rotateZ(t * sk.spin + flow * 0.0012);
+    }
+  }
+  trails.matrix.copy(points.matrix);
   bgStars.rotation.y = flow * 0.0015 + t * 0.004; bgStars.rotation.x = flow * 0.0007;
   const sway = shut > 0.5 ? 0 : 1;
   points.rotation.y = (Math.sin(flow * 0.021) * 0.22 + Math.sin(t * 0.37) * 0.05) * sway;
   points.rotation.z = Math.sin(flow * 0.017 + 2) * 0.06 * sway;
   points.rotation.x = Math.sin(t * 0.29 + 1) * 0.04 * sway;
-  const breathe = 1 + pulse * 0.045 + Math.sin(t * 1.3) * 0.008;
+  const breathe = 1 + bassPulse * 0.022 + Math.sin(t * 1.3) * 0.006;
   points.scale.set(breathe, breathe, breathe);
+  points.updateMatrix(); trails.matrix.copy(points.matrix);
 
   // post
   flash *= Math.exp(-dt * 2.2);
@@ -636,7 +760,7 @@ function frame(now) {
   if (lastSlot >= 0 && slot.kind === 'title' && slots[lastSlot] && slots[lastSlot].sec < si) warpKick = 1;
   // events
   if (lastSlot >= 0 && k !== lastSlot && started) {
-    for (const ev of EVENTS) if (lastSlot < ev.slot && k >= ev.slot) ev.fn();
+    if (k - lastSlot <= 3) for (const ev of EVENTS) if (lastSlot < ev.slot && k >= ev.slot) ev.fn();
   }
   lastSlot = k;
 
@@ -684,13 +808,18 @@ const GW = 18, GH = 12, grid = new Float32Array(GW * GH), gtmp = new Float32Arra
 let frameNo = 0;
 function updateDensity() {
   gtmp.fill(0);
-  const e = pMat.uniforms.uExp.value;
-  for (let i = 0; i < N; i += 23) {
+  points.updateMatrixWorld(true);
+  const e = pMat.uniforms.uExp.value, drawn = geo.drawRange.count === Infinity ? N : Math.min(N, geo.drawRange.count);
+  for (let i = 0; i < drawn; i += 23) {
     const sz = SIZ[i]; if (sz <= 0.001) continue;
-    tmpV.set(POS[i * 3], POS[i * 3 + 1], POS[i * 3 + 2]).project(camera);
+    tmpV.set(POS[i * 3], POS[i * 3 + 1], POS[i * 3 + 2]).applyMatrix4(points.matrixWorld).project(camera);
     if (tmpV.z > 1 || tmpV.x < -1 || tmpV.x > 1 || tmpV.y < -1 || tmpV.y > 1) continue;
     const gx = Math.min(GW - 1, ((tmpV.x * 0.5 + 0.5) * GW) | 0), gy = Math.min(GH - 1, ((-tmpV.y * 0.5 + 0.5) * GH) | 0);
-    gtmp[gy * GW + gx] += (COL[i * 3] + COL[i * 3 + 1] + COL[i * 3 + 2]) * sz * e;
+    const v = (COL[i * 3] + COL[i * 3 + 1] + COL[i * 3 + 2]) * sz * e;
+    gtmp[gy * GW + gx] += v;
+    // glow spills into the neighbours
+    if (gx > 0) gtmp[gy * GW + gx - 1] += v * 0.35; if (gx < GW - 1) gtmp[gy * GW + gx + 1] += v * 0.35;
+    if (gy > 0) gtmp[(gy - 1) * GW + gx] += v * 0.35; if (gy < GH - 1) gtmp[(gy + 1) * GW + gx] += v * 0.35;
   }
   for (let i = 0; i < grid.length; i++) grid[i] += (gtmp[i] - grid[i]) * 0.35;
 }

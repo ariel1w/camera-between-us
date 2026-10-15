@@ -1,8 +1,9 @@
-// The score and sound design, all synthesized live in the browser.
-// A composed score: every section has its own chord progression, played by
-// strings, a choir and (at the big moments) brass and timpani, with a sparse
-// recurring theme on a harp-like voice. Chords breathe in and out instead of
-// droning, and the whole piece builds to a majestic D major at the end.
+// The score and sound design, all synthesized in the browser.
+// No sustained tones anywhere: the music is made only of struck and plucked
+// sounds that ring and fade (a synthesized piano, a harp, celesta bells),
+// flowing as arpeggios through each section's chords, with the theme on top.
+// Majesty comes from build: denser arpeggios, octaves, harp sweeps, timpani
+// and short swells that bloom and die away at the great moments.
 
 const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
 
@@ -36,6 +37,15 @@ const THEME = [
   [[3, 0.55], [2, 0.55], [4, 0.9], [3, 0.55], [1, 1.6]],
   [[4, 0.55], [5, 0.55], [4, 0.9], [2, 0.55], [3, 1.8]],
   [[2, 0.8], [3, 0.8], [1, 1.4]],
+];
+
+// arpeggio shapes, as indices into the chord tones (-1 = rest)
+const PATTERNS = [
+  [0, 2, 4, 2, 5, 4, 2, 4],
+  [0, 1, 2, 4, 3, 2, 4, 6],
+  [0, 2, 1, 3, 2, 4, 3, 5],
+  [3, 2, 4, 2, 5, 2, 4, 1],
+  [0, 4, 2, 5, 3, 6, 4, 2],
 ];
 
 function makeIR(ctx, secs = 4.8, decay = 2.6) {
@@ -72,7 +82,8 @@ export class Score {
   constructor() {
     this.ready = false; this.muted = false; this.t = 0; this.lastStep = 0; this.dir = 1;
     this.running = false; this.mood = -1; this.ci = 0; this.chordT = 0; this.cur = null;
-    this.live = []; this.boost = 0; this.nextSparkle = 2; this.themeK = 0; this.chordCount = 0;
+    this.boost = 0; this.nextSparkle = 2; this.themeK = 0; this.chordCount = 0;
+    this.tape = 1; this.tempo = 1; this.nextNote = 0; this.step = 99; this.stepsInChord = 8; this.pattern = [0];
   }
 
   async init() {
@@ -90,20 +101,9 @@ export class Score {
     this.verbIn = ctx.createGain(); this.verbIn.gain.value = 1; this.verbIn.connect(this.verb);
     const vOut = ctx.createGain(); vOut.gain.value = 0.26; this.verb.connect(vOut); vOut.connect(this.mfilt);
 
-    // orchestra buses
-    const bus = (filterType, f, q, verbAmt) => {
-      const fl = ctx.createBiquadFilter(); fl.type = filterType; fl.frequency.value = f; fl.Q.value = q;
-      const g = ctx.createGain(); g.gain.value = 1; fl.connect(g); g.connect(this.bus);
-      const s = ctx.createGain(); s.gain.value = verbAmt; g.connect(s); s.connect(this.verbIn);
-      return { in: fl, fl, g };
-    };
-    this.strings = bus('lowpass', 1400, 0.5, 0.9);
-    this.choir = bus('highpass', 180, 0.5, 1.1);
-    this.brass = bus('lowpass', 3500, 0.4, 0.6);
-    this.basses = bus('lowpass', 420, 0.6, 0.35);
-    // a gentle shared vibrato, like a section of players
-    this.vib = ctx.createOscillator(); this.vib.frequency.value = 4.6;
-    this.vibG = ctx.createGain(); this.vibG.gain.value = 6; this.vib.connect(this.vibG); this.vib.start();
+    // instrument bus: dry plus a generous hall
+    this.inst = ctx.createGain(); this.inst.gain.value = 1; this.inst.connect(this.bus);
+    const iv = ctx.createGain(); iv.gain.value = 0.85; this.inst.connect(iv); iv.connect(this.verbIn);
 
     // textured beds from one stereo noise loop (scene sound design)
     const nb = noiseBuf(ctx, 5);
@@ -119,13 +119,7 @@ export class Score {
       rumble: bed('lowpass', 85, 1.2),
       wind: bed('bandpass', 600, 1.4),
       fire: bed('lowpass', 900, 0.6),
-      projector: bed('bandpass', 1500, 2),
     };
-    const flut = ctx.createOscillator(); flut.type = 'square'; flut.frequency.value = 18;
-    const fg = ctx.createGain(); fg.gain.value = 0.5; flut.connect(fg);
-    this.projAM = ctx.createGain(); this.projAM.gain.value = 0.5; fg.connect(this.projAM.gain); flut.start();
-    this.beds.projector.g.disconnect(); this.beds.projector.g.connect(this.projAM); this.projAM.connect(this.bus);
-
     await this.renderOneShots();
     this.out.gain.setTargetAtTime(this.muted ? 0 : 0.9, ctx.currentTime, 0.8);
     this.ready = true;
@@ -213,10 +207,43 @@ export class Score {
       const g = oc.createGain(); g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(1.6, 0.15); g.gain.setValueAtTime(1.2, 0.6); g.gain.linearRampToValueAtTime(1.8, 1.1); g.gain.exponentialRampToValueAtTime(0.001, 6.8);
       s.connect(fl); fl.connect(g); g.connect(oc.destination); s.start();
     });
-    for (const k of ['bell', 'swell', 'click', 'crack']) B[k + 'R'] = reversed(this.ctx, B[k]);
+    // a piano: inharmonic partials, two detuned strings, a felt hammer; three registers
+    for (const [name, f] of [['pno3', 130.81], ['pno4', 261.63], ['pno5', 523.25]]) {
+      B[name] = await render(6, oc => {
+        const B2 = 0.00035;
+        for (let n = 1; n <= 12; n++) {
+          const fn = f * n * Math.sqrt(1 + B2 * n * n); if (fn > 16000) break;
+          const amp = 0.32 / Math.pow(n, 1.25) * (n === 1 ? 1 : 0.9), dec = (4.8 * Math.pow(261.63 / f, 0.35)) / (1 + n * 0.42);
+          for (const det of [-0.8, 0.8]) {
+            const o = oc.createOscillator(); o.frequency.value = fn; o.detune.value = det;
+            const g = oc.createGain(); g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(amp * 0.5, 0.004); g.gain.exponentialRampToValueAtTime(0.0001, Math.min(5.9, dec + 0.05));
+            o.connect(g); g.connect(oc.destination); o.start(); o.stop(6);
+          }
+        }
+        const nb = oc.createBuffer(1, oc.sampleRate * 0.03, oc.sampleRate), d = nb.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3);
+        const s = oc.createBufferSource(); s.buffer = nb; const fl = oc.createBiquadFilter(); fl.type = 'bandpass'; fl.frequency.value = f * 6; fl.Q.value = 1;
+        const g = oc.createGain(); g.gain.value = 0.08; s.connect(fl); fl.connect(g); g.connect(oc.destination); s.start();
+      });
+    }
+    // a harp: plucked string (Karplus-Strong), two registers
+    for (const [name, f] of [['harp3', 130.81], ['harp4', 261.63]]) {
+      const sr = 44100, len = sr * 4, buf = this.ctx.createBuffer(1, len, sr), d = buf.getChannelData(0);
+      const N = Math.round(sr / f), ring = new Float32Array(N);
+      for (let i = 0; i < N; i++) ring[i] = (Math.random() * 2 - 1) * (0.6 + 0.4 * Math.sin(Math.PI * i / N));
+      let idx = 0, prev = 0;
+      for (let i = 0; i < len; i++) {
+        const cur = ring[idx], nxt = ring[(idx + 1) % N];
+        const v = 0.4985 * (cur + nxt);
+        ring[idx] = v; d[i] = cur * 0.45; idx = (idx + 1) % N; prev = v;
+      }
+      for (let i = 0; i < 60; i++) d[i] *= i / 60;
+      B[name] = buf;
+    }
+    for (const k of ['bell', 'swell', 'click', 'crack', 'pno3', 'pno4', 'pno5', 'harp3', 'harp4']) B[k + 'R'] = reversed(this.ctx, B[k]);
   }
 
-  play(name, { rate = 1, gain = 1, pos = null, verb = 0.4, when = 0 } = {}) {
+  play(name, { rate = 1, gain = 1, pos = null, verb = 0.4, when = 0, at = 0, inst = false } = {}) {
     if (!this.ready || !this.buf[name]) return;
     const ctx = this.ctx, s = ctx.createBufferSource(); s.buffer = this.buf[name]; s.playbackRate.value = rate;
     const g = ctx.createGain(); g.gain.value = gain;
@@ -227,9 +254,12 @@ export class Score {
       p.positionX.value = pos[0]; p.positionY.value = pos[1]; p.positionZ.value = pos[2];
       g.connect(p); node = p;
     }
-    node.connect(this.bus);
-    if (verb > 0) { const vg = ctx.createGain(); vg.gain.value = verb; node.connect(vg); vg.connect(this.verbIn); }
-    s.start(ctx.currentTime + when);
+    if (inst) node.connect(this.inst);
+    else {
+      node.connect(this.bus);
+      if (verb > 0) { const vg = ctx.createGain(); vg.gain.value = verb; node.connect(vg); vg.connect(this.verbIn); }
+    }
+    s.start(at || ctx.currentTime + when);
   }
 
   rndPos(r = 4) {
@@ -237,65 +267,25 @@ export class Score {
     return [Math.cos(a) * r, Math.sin(e) * r, Math.sin(a) * r];
   }
 
-  // ---------------------------------------------------------------- orchestra
-  voice(dest, type, freq, t0, att, hold, rel, peak, detunes, extra) {
-    const ctx = this.ctx, g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.linearRampToValueAtTime(peak, t0 + att);
-    g.gain.setValueAtTime(peak, t0 + att + hold);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + att + hold + rel);
-    let into = g;
-    if (extra) into = extra(g);
-    const end = t0 + att + hold + rel + 0.1;
-    for (const dt of detunes) {
-      const o = ctx.createOscillator(); o.type = type; o.frequency.value = freq; o.detune.value = dt;
-      this.vibG.connect(o.detune);
-      o.connect(into); o.start(t0); o.stop(end);
-      this.live.push({ o, base: dt, end });
-    }
-    g.connect(dest);
+  // ---------------------------------------------------------------- the score
+  // one note on an instrument, at an exact audio time
+  note(inst, midi, at, gain, pan = 0) {
+    const regs = inst === 'pno' ? [[48, 'pno3'], [60, 'pno4'], [72, 'pno5']] : [[48, 'harp3'], [60, 'harp4']];
+    let best = regs[0]; for (const r of regs) if (Math.abs(midi - r[0]) < Math.abs(midi - best[0])) best = r;
+    const name = best[1] + (this.dir < 0 ? 'R' : '');
+    this.play(name, { rate: Math.pow(2, (midi - best[0]) / 12) * this.tape, gain, at, inst: true, pos: [pan * 2.5, 0.3, -1.2] });
   }
 
-  formants(g) { // a sung "ah"
-    const ctx = this.ctx, mix = ctx.createGain(); mix.gain.value = 1;
-    for (const [f, q, a] of [[730, 7, 1], [1090, 9, 0.55], [2440, 12, 0.25]]) {
-      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
-      const ga = ctx.createGain(); ga.gain.value = a * 2.4; bp.connect(ga); ga.connect(g); mix.connect(bp);
+  // a swell that blooms and dies away: never held
+  bloom(root, at, strength = 1) {
+    const ctx = this.ctx;
+    for (const [n, a] of [[root, 1], [root + 7, 0.6], [root + 12, 0.45]]) {
+      const g = ctx.createGain(), f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 0.6;
+      f.frequency.setValueAtTime(300, at); f.frequency.linearRampToValueAtTime(1400 + 900 * strength, at + 1.1); f.frequency.exponentialRampToValueAtTime(350, at + 4.2);
+      g.gain.setValueAtTime(0.0001, at); g.gain.linearRampToValueAtTime(0.05 * a * strength, at + 1.2); g.gain.exponentialRampToValueAtTime(0.0001, at + 4.6);
+      for (const det of [-6, 6]) { const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = mtof(n); o.detune.value = det; o.connect(f); o.start(at); o.stop(at + 4.8); }
+      f.connect(g); g.connect(this.inst);
     }
-    return mix;
-  }
-
-  playChord(chord, dur, I) {
-    const ctx = this.ctx, t0 = ctx.currentTime + 0.05, [root, q] = chord, iv = IV[q];
-    const att = 2.4 - I * 1.3, rel = 3.8, hold = Math.max(0.5, dur - att * 0.5);
-    const tones = iv.map(x => root + 12 + x);
-    this.cur = { root, tones };
-    // basses: the root, felt underneath
-    this.voice(this.basses.in, 'triangle', mtof(root), t0, att, hold, rel, 0.11 + I * 0.07, [0, 5], null);
-    // strings: open voicing, three players per note
-    const sv = [tones[0], tones[2] !== undefined ? tones[2] : tones[1], tones[1] + 12, ...(tones[3] !== undefined ? [tones[3] + (tones[3] - root > 18 ? 0 : 12)] : [])];
-    sv.forEach((n, k) => this.voice(this.strings.in, 'sawtooth', mtof(n), t0 + k * 0.05, att, hold, rel, (0.022 + I * 0.018), [-9, 0, 8], null));
-    if (I > 0.82) this.voice(this.strings.in, 'sawtooth', mtof(root + 36), t0, att * 1.4, hold, rel, 0.012 * (I - 0.7) * 6, [-6, 6], null);
-    // choir joins as the story opens up
-    if (I > 0.42) {
-      const ci = Math.min(1, (I - 0.42) / 0.4);
-      [root + 24, root + 24 + iv[1], root + 24 + iv[2]].forEach((n, k) => this.voice(this.choir.in, 'sawtooth', mtof(n), t0 + 0.3 + k * 0.1, att * 1.2, hold, rel, 0.02 * ci, [-7, 7], g => this.formants(g)));
-    }
-    // brass for the great moments: filter opens like a breath through a horn
-    if (I > 0.7) {
-      const bi = Math.min(1, (I - 0.7) / 0.25);
-      for (const n of [root + 12, root + 19]) {
-        this.voice(this.brass.in, 'sawtooth', mtof(n), t0 + 0.2, att, hold * 0.8, rel, 0.03 * bi, [-5, 5], g => {
-          const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 1;
-          f.frequency.setValueAtTime(250, t0); f.frequency.linearRampToValueAtTime(700 + 1600 * bi, t0 + att + 0.3); f.frequency.exponentialRampToValueAtTime(400, t0 + att + hold + rel);
-          f.connect(g); return f;
-        });
-      }
-      if (Math.random() < 0.5 + bi * 0.5) this.timp(root, 0.5 + bi * 0.4);
-    }
-    this.chordCount++;
-    // the theme, softly, every other chord
-    if (I > 0.28 && this.chordCount % 2 === 0) this.theme(I);
   }
 
   timp(root, gain = 0.7, when = 0) {
@@ -303,23 +293,74 @@ export class Score {
     this.play('timp', { rate: mtof(n) / 73.42, gain, verb: 0.5, when });
   }
 
-  theme(I) {
+  // a harp sweep up through the chord
+  gliss(at, I) {
     if (!this.cur) return;
-    const tones = this.cur.tones, all = [...tones, ...tones.map(x => x + 12)];
+    const { root, iv } = this.cur, notes = [];
+    for (let o = 12; o <= 36; o += 12) for (const x of iv) notes.push(root + o + x);
+    notes.forEach((n, k) => this.note('harp', n, at + k * (0.07 - I * 0.02), 0.22 + I * 0.1, -0.8 + k / notes.length * 1.6));
+  }
+
+  // the recurring theme, high on the celesta
+  theme(at, I) {
+    if (!this.cur) return;
+    const { root, iv } = this.cur, all = [];
+    for (const o of [24, 36]) for (const x of iv) all.push(root + o + x);
     const ph = THEME[this.themeK++ % THEME.length];
-    let t = 0.6;
+    let t = at;
     for (const [idx, d] of ph) {
-      const n = all[Math.min(idx, all.length - 1)] + 12;
-      this.play(this.dir < 0 ? 'bellR' : 'bell', { rate: mtof(n) / 523.25, gain: 0.16 + I * 0.08, pos: [Math.sin(this.t) * 1.5, 0.5, -1.5], verb: 1.1, when: t });
-      t += d * (1.25 - I * 0.3);
+      const n = all[Math.min(idx, all.length - 1)];
+      this.play(this.dir < 0 ? 'bellR' : 'bell', { rate: mtof(n) / 523.25 * this.tape, gain: 0.13 + I * 0.07, at: t, inst: true, pos: [0.6, 0.6, -1.5] });
+      t += d * (1.3 - I * 0.35);
     }
   }
 
-  hit(strength = 1) { // a dramatic accent: timpani and a swell
-    if (!this.ready) return;
-    this.boost = Math.min(0.45, this.boost + 0.3 * strength);
-    if (this.cur) this.timp(this.cur.root, 0.6 + strength * 0.4);
-    this.chordT = Math.min(this.chordT, 0.2);
+  hit(strength = 1) { // a great moment: timpani, a harp sweep, a swell
+    if (!this.ready || !this.cur) return;
+    const at = this.ctx.currentTime + 0.05;
+    this.boost = Math.min(0.4, this.boost + 0.25 * strength);
+    this.timp(this.cur.root, 0.5 + strength * 0.35);
+    this.gliss(at + 0.05, Math.min(1, 0.5 + strength * 0.3));
+    this.bloom(this.cur.root + 12, at, Math.min(1.4, strength));
+  }
+
+  accent() { // a hero line arrives: a shimmer of celesta and a breath of harp
+    if (!this.ready || !this.cur) return;
+    const at = this.ctx.currentTime + 0.05, { root, iv } = this.cur;
+    [0, 1, 2].forEach((k) => this.play('bell', { rate: mtof(root + 36 + iv[k % iv.length]) / 523.25, gain: 0.12, at: at + k * 0.11, inst: true, pos: [(k - 1) * 1.5, 0.8, -1.4] }));
+    this.gliss(at + 0.1, 0.4);
+  }
+
+  // the arpeggio engine: schedules notes slightly ahead on the audio clock
+  schedule(now, I, st) {
+    while (this.nextNote < now + 0.3) {
+      const at = Math.max(this.nextNote, now + 0.02);
+      if (this.step >= this.stepsInChord) {
+        const prog = PROG[this.mood] || PROG[0];
+        const [root, q] = prog[this.ci % prog.length]; this.ci++;
+        this.cur = { root, iv: IV[q] };
+        this.step = 0; this.stepsInChord = I > 0.62 ? 16 : 8; this.chordCount++;
+        this.pattern = PATTERNS[(this.mood + this.ci) % PATTERNS.length];
+        if (I > 0.28 && this.chordCount % 2 === 0) this.theme(at + 0.4, I);
+        if (I > 0.78) this.bloom(root + 12, at, (I - 0.7) * 2.5);
+        if (I > 0.85 && this.chordCount % 2 === 1) this.timp(root, 0.35 + (I - 0.85) * 2);
+      }
+      const { root, iv } = this.cur, k = this.step, stepDur = (0.46 - I * 0.17) / this.tempo;
+      const tones = []; for (const o of [12, 24]) for (const x of iv) tones.push(root + o + x); tones.push(root + 36);
+      // the bass, struck at the top of each chord
+      if (k === 0) { this.note('pno', root, at, 0.32 + I * 0.12, -0.3); if (I > 0.7) this.note('pno', root - 12, at, 0.22, -0.3); }
+      if (k === 8 && I > 0.62) this.note('pno', root + 7, at, 0.2, -0.2);
+      // the flowing figure; calm passages leave gaps
+      const idx = this.pattern[k % this.pattern.length];
+      const quiet = I < 0.45 && (k % 2 === 1) && Math.random() < 0.55;
+      if (idx >= 0 && !quiet) {
+        const n = tones[Math.min(idx, tones.length - 1)], accent = k % 4 === 0 ? 1.25 : 1;
+        this.note('pno', n, at, (0.12 + I * 0.1) * accent, -0.4 + (idx / tones.length) * 0.9);
+        if (I > 0.74) this.note('pno', n + 12, at, (0.05 + (I - 0.74) * 0.25) * accent, 0.4);
+      }
+      this.step++;
+      this.nextNote = at + stepDur + (this.step >= this.stepsInChord && I < 0.42 && Math.random() < 0.4 ? stepDur * 2 : 0);
+    }
   }
 
   windup(secs) {
@@ -330,7 +371,7 @@ export class Score {
   boom() {
     this.play('boom', { gain: 1, verb: 0.8 });
     this.play('click', { rate: 0.5, gain: 1.1, verb: 1 });
-    this.running = true; this.chordT = 0.4;
+    this.running = true; this.nextNote = this.ctx ? this.ctx.currentTime + 0.6 : 0; this.step = 99;
   }
 
   setMuted(m) {
@@ -348,40 +389,25 @@ export class Score {
     this.boost *= Math.exp(-dt * 0.25);
     const I = Math.min(1, st.intensity + this.boost + Math.min(av, 12) * 0.012);
 
-    // the score: a new chord when one has breathed its length
+    // the score
+    const bendC = Math.max(-500, Math.min(500, v * 16));
+    this.tape = Math.pow(2, bendC / 1200);
+    this.tempo = 1 + Math.min(av, 10) * 0.06;
     if (this.running && !st.freeze) {
       if (st.mood !== this.mood) {
-        const forward = st.mood > this.mood;
-        this.mood = st.mood; this.ci = 0;
-        if (forward && this.mood > 0) this.hit(0.6);
-        this.chordT = Math.min(this.chordT, 0.3);
+        const forward = st.mood > this.mood, first = this.mood < 0;
+        this.mood = st.mood; this.ci = 0; this.step = 99;
+        if (!first) this.nextNote = Math.min(this.nextNote || now, now + 0.15);
+        if (forward && !first) setTimeout(() => this.hit(0.6), 250);
       }
-      this.chordT -= dt * (1 + Math.min(av, 10) * 0.08);
-      if (this.chordT <= 0) {
-        const prog = PROG[this.mood] || PROG[0];
-        const chord = prog[this.ci % prog.length]; this.ci++;
-        const dur = (this.mood === 15 ? 5.6 : 7.2) - I * 1.4;
-        this.playChord(chord, dur, I);
-        // calm passages leave a breath of air between chords
-        this.chordT = dur + (I < 0.45 && Math.random() < 0.35 ? 1.6 : 0);
-      }
-    }
-    // the orchestra opens up with intensity
-    this.strings.fl.frequency.setTargetAtTime((st.freeze ? 500 : 900 + I * 2600 + av * 60), now, 0.4);
-    this.strings.g.gain.setTargetAtTime(0.75 + I * 0.4, now, 0.5);
+      if (!this.nextNote || this.nextNote < now - 1) this.nextNote = now + 0.05;
+      this.schedule(now, I, st);
+    } else if (st.freeze) this.nextNote = now + 0.4;
     this.mfilt.frequency.setTargetAtTime(st.freeze ? 1000 : 18000, now, st.freeze ? 0.3 : 0.08);
-
-    // tape speed: fast scrolling bends the orchestra, rewinding wobbles it
-    const bend = Math.max(-600, Math.min(600, v * 18)) + (rev ? Math.sin(this.t * 6) * 30 : 0);
-    if (this.live.length) {
-      const keep = [];
-      for (const L of this.live) if (L.end > now) { L.o.detune.setTargetAtTime(L.base + bend, now, 0.15); keep.push(L); }
-      this.live = keep;
-    }
 
     const B = this.beds, set = (b, x, tc = 0.4) => b.g.gain.setTargetAtTime(x, now, tc);
     set(B.rain, st.rain * 0.45); set(B.rainLow, st.rain * 0.3);
-    set(B.rumble, st.rumble * 0.8); set(B.fire, st.fire * 0.3); set(B.projector, st.projector * 0.06);
+    set(B.rumble, st.rumble * 0.8); set(B.fire, st.fire * 0.3);
     set(B.wind, Math.min(0.4, Math.max(0, av - 2) * 0.025), 0.1);
     B.wind.fl.frequency.setTargetAtTime(300 + av * 110, now, 0.1);
 
@@ -389,10 +415,10 @@ export class Score {
     if (dir !== this.dir) { if (dir < 0) this.play('swellR', { gain: 0.4, verb: 0.6 }); this.dir = dir; }
 
     // rare sparkles, more when you fly
-    this.nextSparkle -= dt * (0.12 + av * 0.1) * st.bells;
+    this.nextSparkle -= dt * (0.05 + av * 0.1) * st.bells;
     if (this.nextSparkle <= 0 && this.cur && !st.freeze) {
       this.nextSparkle = 1 + Math.random() * 2;
-      const tones = this.cur.tones, n = tones[Math.floor(Math.random() * tones.length)] + 24;
+      const iv = this.cur.iv, n = this.cur.root + 36 + iv[Math.floor(Math.random() * iv.length)];
       this.play(rev ? 'bellR' : 'bell', { rate: mtof(n) / 523.25, gain: 0.1 + Math.random() * 0.06, pos: this.rndPos(3 + Math.random() * 3), verb: 1 });
     }
     if (st.fire > 0.1 && Math.random() < st.fire * dt * 12) this.play('ratchet', { rate: 0.4 + Math.random() * 0.6, gain: 0.2 * st.fire, pos: this.rndPos(2), verb: 0.1 });

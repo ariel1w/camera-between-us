@@ -3,9 +3,9 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SECTIONS } from './content.js?v=5';
-import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=5';
-import { Score } from './audio.js?v=5';
+import { SECTIONS } from './content.js?v=8';
+import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=8';
+import { Score } from './audio.js?v=8';
 
 const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 600;
@@ -33,6 +33,22 @@ const HOLD = {
   15: { 'So perhaps the camera was never freezing time.': 1.4, 'It was showing us that time cannot be frozen.': 2.4, 'The beginning of the question.': 2.5 },
 };
 
+// Hero lines: the text itself becomes the celebration at these moments.
+const HERO = [
+  'What is a camera really doing?', 'I chose Lumen.', 'The camera.',
+  'Is the camera a time machine?', 'Then perhaps the camera is a proto-time machine.',
+  'Nothing happened to the flower', 'Perhaps the mountain was never motionless.',
+  'Everything is always changing.', 'Everything.', 'I am searching for kinship.',
+  'Then there is time in the fuel.', 'Real and not real.', 'Perhaps the night sky is already a kind of natural time machine.',
+  'Perhaps a time machine does not always require a passenger.', 'judgement.', 'Did I see it?', 'Seeing is no longer sufficient.',
+  'Information has affected the future.', 'We do not merely exist in time.',
+  'Cameras are everywhere.', 'Perhaps we have been constructing a time machine without recognising it.',
+  'Aura.', 'Grambles.', 'I was trying to allow Lumen not to be human.', 'The thought travels between us.',
+  'Time travel does not necessarily mean travelling to another date.',
+  'It was showing us that time cannot be frozen.', 'Not the answer.', 'The beginning of the question.',
+];
+const isHero = t => HERO.some(h => t === h || t.startsWith(h));
+
 const slots = [];
 let total = 0;
 const secInfo = [];
@@ -41,11 +57,12 @@ SECTIONS.forEach((sec, si) => {
   slots.push({ kind: 'title', sec: si, start: total, len: 3.4, dur: 2.8 }); total += 3.4;
   sec.lines.forEach((ln, li) => {
     const words = ln.t.split(/\s+/).length;
-    let len = 1.05 + words * 0.075 + (ln.s === 'H' ? 0.3 : 0);
+    const hero = isHero(ln.t), short = !hero && words <= 3 && ln.s !== 'H';
+    let len = 1.05 + words * 0.075 + (ln.s === 'H' ? 0.3 : 0) + (hero ? 0.9 : 0);
     const hold = (HOLD[si] && HOLD[si][ln.t]) || 0, last = li === sec.lines.length - 1;
     len += hold + (last ? 1.2 : 0);
-    const dur = 0.85 + words * 0.19 + (ln.s === 'L' ? 0.45 : 0) + hold * 0.9 + (last ? 0.8 : 0);
-    slots.push({ kind: 'line', sec: si, li, start: total, len, dur, line: ln }); total += len;
+    const dur = 0.85 + words * 0.19 + (ln.s === 'L' ? 0.45 : 0) + hold * 0.9 + (last ? 0.8 : 0) + (hero ? 1.2 : short ? 0.25 : 0);
+    slots.push({ kind: 'line', sec: si, li, start: total, len, dur, line: ln, hero, short }); total += len;
   });
   info.end = total;
   secInfo.push(info);
@@ -236,6 +253,18 @@ addEventListener('resize', resize);
 resize();
 
 // ------------------------------------------------------------ text layer
+const KEYWORDS = [['time', /^time$/i], ['camera', /^cameras?$/i], ['light', /^light$/i], ['change', /^chang(e|es|ing|ed)$/i], ['matter', /^matter$/i],
+  ['future', /^futures?$/i], ['universe', /^universe$/i], ['aura', /^aura$/i], ['kinship', /^kinship$/i], ['truth', /^truth$/i],
+  ['intelligence', /^intelligence$/i], ['now', /^now$/i], ['past', /^past$/i], ['observer', /^observer$/i]];
+const seenKw = new Set();
+function keywordClass(word) {
+  const bare = word.replace(/[^A-Za-z’'-]/g, '');
+  for (const [key, re] of KEYWORDS) if (re.test(bare)) {
+    if (!seenKw.has(key)) { seenKw.add(key); return ' kw'; }
+    return key === 'time' || key === 'light' ? ' kw2' : '';
+  }
+  return '';
+}
 const linesEl = $('#lines');
 const els = slots.map((s, k) => {
   const d = document.createElement('div');
@@ -245,19 +274,22 @@ const els = slots.map((s, k) => {
     const num = /^\d+$/.test(sec.num) ? sec.num : sec.num;
     d.innerHTML = `<div class="num ${/^\d+$/.test(sec.num) ? '' : 'word'}">${num}</div><div class="name">${sec.title}</div>`;
   } else if (s.kind === 'line') {
-    const ln = s.line, prev = k > 0 && slots[k - 1].kind === 'line' ? slots[k - 1].line : null;
+    const ln = s.line, prev = k > 0 && slots[k - 1].kind === 'line' && slots[k - 1].sec === s.sec ? slots[k - 1].line : null;
     const who = ln.s === 'N' ? 'neil' : ln.s === 'L' ? 'lumen' : 'head';
-    d.className = 'ln ' + who;
+    const L = ln.t.length;
+    d.className = 'ln ' + who + (s.hero ? ' hero ' + (L <= 14 ? 'h1' : L <= 42 ? 'h2' : 'h3') : s.short ? ' short' : '');
     let html = '';
-    if (ln.s !== 'H' && (!prev || prev.s !== ln.s || slots[k - 1].sec !== s.sec)) html += `<div class="who">${ln.s === 'N' ? 'Neil' : 'Lumen'}</div>`;
-    if (ln.s === 'L') {
-      // Lumen's words assemble out of light, letter by letter
-      const words = ln.t.split(' ').map(w => '<span class="w">' + [...w].map(ch => {
-        const dx = ((Math.random() - 0.5) * 50).toFixed(0), dy = ((Math.random() - 0.5) * 36).toFixed(0), dl = (Math.random() * 0.22).toFixed(2);
-        return `<span class="ch" style="--dx:${dx}px;--dy:${dy}px;--dl:${dl}s">${ch}</span>`;
-      }).join('') + '</span>');
-      html += `<div class="tx">${words.join(' ')}</div>`;
-    } else html += `<div class="tx">${ln.t}</div>`;
+    // who is speaking, on every line; bigger when the voice changes
+    if (ln.s !== 'H') html += `<div class="who${!prev || prev.s !== ln.s ? ' chg' : ''}"><i></i>${ln.s === 'N' ? 'Neil' : 'Lumen'}</div>`;
+    let wi = 0;
+    const wordHtml = w => {
+      const cls = keywordClass(w), i = wi++;
+      const inner = ln.s === 'L'
+        ? [...w].map(ch => { const dx = ((Math.random() - 0.5) * 50).toFixed(0), dy = ((Math.random() - 0.5) * 36).toFixed(0), dl = (Math.random() * 0.22).toFixed(2); return `<span class="ch" style="--dx:${dx}px;--dy:${dy}px;--dl:${dl}s">${ch}</span>`; }).join('')
+        : w;
+      return `<span class="w${cls}" style="--i:${i}">${inner}</span>`;
+    };
+    html += `<div class="tx">${ln.t.split(' ').map(wordHtml).join(' ')}</div>`;
     d.innerHTML = html;
   } else { d.className = 'none'; }
   d.style.display = 'none';
@@ -607,6 +639,8 @@ function frame(now) {
   const ts = slot.kind === 'credits' ? totalDur : cumDur[k] + Math.min(1, (pos - slot.start) / slot.len) * slot.dur;
   $('#time').innerHTML = mmss(ts / SPEEDS[speedIdx]) + ' <span>/ ' + mmss(totalDur / SPEEDS[speedIdx]) + '</span>';
   $('#deck-sec').textContent = secName(si);
+  const voice = slot.kind === 'line' ? slot.line.s : '';
+  if (document.body.dataset.who !== voice) document.body.dataset.who = voice;
   $('#deck').classList.toggle('idle', auto && performance.now() - lastMove > 2600 && !scrubbing);
 
   // sound
@@ -648,7 +682,7 @@ function renderText(k) {
     el.style.opacity = op.toFixed(3);
     el.style.transform = `translate(-50%, -50%) translateY(${y.toFixed(1)}px) scale(${sc.toFixed(4)})`;
     el.style.filter = bl > 0.15 ? `blur(${bl.toFixed(1)}px)` : 'none';
-    if (!el._on) { el._on = true; el.classList.add('on'); }
+    if (!el._on) { el._on = true; el.classList.add('on'); if (s.hero && Math.abs(vel) < 6) score.accent(); }
   }
 }
 
@@ -665,6 +699,8 @@ $('#begin').onclick = async () => {
 $('#snd').onclick = () => { score.setMuted(!score.muted); $('#snd').classList.toggle('off', score.muted); };
 $('#rewind').onclick = () => { setAuto(false); flyTo(0); };
 $('#play').onclick = () => setAuto(!auto);
+// if a browser held the sound back, any later click or key unlocks it
+['pointerdown', 'keydown', 'touchend'].forEach(ev => addEventListener(ev, () => { if (score.ctx && score.ctx.state === 'suspended') score.ctx.resume(); }, { passive: true }));
 $('#back').onclick = () => step(-1);
 $('#fwd').onclick = () => step(1);
 setSpeed(speedIdx);

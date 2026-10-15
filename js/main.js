@@ -3,9 +3,9 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SECTIONS } from './content.js';
-import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js';
-import { Score } from './audio.js';
+import { SECTIONS } from './content.js?v=5';
+import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=5';
+import { Score } from './audio.js?v=5';
 
 const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 600;
@@ -266,17 +266,34 @@ const els = slots.map((s, k) => {
 });
 
 // ------------------------------------------------------------ HUD
-const tl = $('#timeline');
-secInfo.forEach((info, si) => {
-  const b = document.createElement('button');
-  b.className = 'tick'; b.style.top = (info.start / total * 100) + '%';
-  const sec = SECTIONS[si];
-  b.title = (/^\d+$/.test(sec.num) ? sec.num + '. ' : sec.num + ': ') + sec.title;
-  b.innerHTML = `<span>${b.title}</span>`;
-  b.onclick = () => { if (auto) { setAuto(false); flyTo(info.start + 0.4); } else flyTo(info.start + 0.4); };
-  tl.appendChild(b);
+// the deck: a scrub bar marked with every section, a big play button, speed
+const scrub = $('#scrub'), scrubTrack = $('#scrub .track'), scrubTip = $('#scrub .tip');
+const playable = slots[slots.length - 1].start + 1; // the end of the conversation
+secInfo.forEach((info) => {
+  const t = document.createElement('div'); t.className = 'tk'; t.style.left = (info.start / playable * 100) + '%';
+  $('#scrub .ticks').appendChild(t);
 });
-const marker = document.createElement('div'); marker.className = 'marker'; tl.appendChild(marker);
+const secName = si => { const sec = SECTIONS[si]; return (/^\d+$/.test(sec.num) ? sec.num + '. ' : sec.num + ': ') + sec.title; };
+const fracAt = e => { const r = scrubTrack.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); };
+let scrubbing = false;
+function scrubTo(f) {
+  const target = f * playable * UNIT;
+  flying = null; window.scrollTo(0, target); autoY = target;
+  $('#hint').classList.add('gone');
+}
+scrub.addEventListener('pointerdown', e => { scrubbing = true; scrub.setPointerCapture(e.pointerId); scrubTo(fracAt(e)); });
+scrub.addEventListener('pointermove', e => {
+  const f = fracAt(e), k = slotAt(f * playable);
+  scrubTip.textContent = secName(slots[k].sec);
+  const r = scrubTrack.getBoundingClientRect();
+  scrubTip.style.left = Math.max(90, Math.min(r.width - 90, f * r.width)) + 'px';
+  if (scrubbing) scrubTo(f);
+});
+['pointerup', 'pointercancel'].forEach(ev => scrub.addEventListener(ev, () => { scrubbing = false; }));
+// reading time at 1x, for the clock on the deck
+const cumDur = []; { let acc = 0; for (const sl of slots) { cumDur.push(acc); acc += sl.kind === 'credits' ? 0 : sl.dur; } }
+const totalDur = cumDur[cumDur.length - 1];
+const mmss = x => { x = Math.max(0, Math.round(x)); return String(Math.floor(x / 60)).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0'); };
 
 const skyLabels = SKY_LABELS.map(L => { const d = document.createElement('div'); d.className = 'sky'; d.textContent = L.text; $('#labels').appendChild(d); return d; });
 let choice = 'umbrella';
@@ -294,12 +311,13 @@ choiceEls[0].classList.add('sel');
 // ------------------------------------------------------------ flight state
 let pos = 0, prevPos = 0, vel = 0, flow = 0, t0 = performance.now(), last = t0;
 let started = false, intro = 0, burst = 0, apertureOpen = 0, introT = -1, flash = 0;
-let mouseX = 0, mouseY = 0, flying = null, lastSlot = -1, expo = 1, auto = false, autoY = 0;
+let mouseX = 0, mouseY = 0, flying = null, lastSlot = -1, expo = 1, auto = false, autoY = 0, lastMove = 0;
 const score = new Score();
 const tmpV = new THREE.Vector3();
 
 addEventListener('pointermove', e => { mouseX = e.clientX / innerWidth - 0.5; mouseY = e.clientY / innerHeight - 0.5; });
-['wheel', 'touchstart'].forEach(ev => addEventListener(ev, () => { if (flying) flying = null; if (auto) setAuto(false); $('#hint').classList.add('gone'); }, { passive: true }));
+['wheel', 'touchstart'].forEach(ev => addEventListener(ev, e => { if (e.target.closest && e.target.closest('#deck')) return; if (flying) flying = null; if (auto) setAuto(false); $('#hint').classList.add('gone'); }, { passive: true }));
+addEventListener('pointermove', () => { lastMove = performance.now(); });
 addEventListener('keydown', e => {
   if (!started) return;
   if (e.code === 'Space') { e.preventDefault(); setAuto(!auto); return; }
@@ -313,7 +331,9 @@ function setAuto(on) {
   auto = on; autoY = scrollY; flying = null;
   $('#hint').classList.add('gone');
   $('#play').classList.toggle('on', on);
-  $('#play').innerHTML = on ? '❚❚<span>Pause</span>' : '▶<span>Play</span>';
+  $('#play').setAttribute('aria-label', on ? 'Pause' : 'Play');
+  $('#play').innerHTML = on ? '<svg viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+  lastMove = performance.now();
 }
 // one line back or forward; Play keeps going from the new line
 function step(dir) {
@@ -331,9 +351,10 @@ function step(dir) {
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 let speedIdx = 2;
 try { const v = parseInt(localStorage.getItem('cbu-speed'), 10); if (v >= 0 && v < SPEEDS.length) speedIdx = v; } catch (e) {}
+SPEEDS.forEach((v, i) => { const b = document.createElement('button'); b.textContent = v + '×'; b.onclick = () => setSpeed(i); $('#speeds').appendChild(b); });
 function setSpeed(i) {
   speedIdx = Math.max(0, Math.min(SPEEDS.length - 1, i));
-  $('#speed').textContent = SPEEDS[speedIdx] + '×';
+  [...$('#speeds').children].forEach((b, k) => b.classList.toggle('on', k === speedIdx));
   try { localStorage.setItem('cbu-speed', speedIdx); } catch (e) {}
 }
 
@@ -424,11 +445,11 @@ function frame(now) {
 
   // intro: wind up, then the aperture snaps open
   if (introT >= 0) {
-    introT += dt;
+    introT += Math.min(0.5, realDt);
     intro = Math.min(1, introT / 2.6);
     if (introT >= 2.6 && apertureOpen === 0) { score.boom(); flash = 1; apertureOpen = 0.0001; burst = 1; }
-    if (apertureOpen > 0 && apertureOpen < 1) apertureOpen = Math.min(1, apertureOpen + dt * 2.6);
-    if (introT > 3.4 && !started) { started = true; document.documentElement.classList.remove('locked'); $('#hint').classList.remove('gone'); $('#hud').classList.add('on'); }
+    if (apertureOpen > 0 && apertureOpen < 1) apertureOpen = Math.min(1, apertureOpen + Math.min(0.5, realDt) * 2.6);
+    if (introT > 3.4 && !started) { started = true; document.documentElement.classList.remove('locked'); $('#hint').classList.remove('gone'); $('#hud').classList.add('on'); $('#deck').classList.add('on'); lastMove = performance.now(); }
   }
   burst *= Math.exp(-dt * 1.2);
   const openNow = started ? Math.min(1 - shut, 1) : (apertureOpen > 0 ? 1 - Math.pow(1 - apertureOpen, 3) : 0);
@@ -532,7 +553,7 @@ function frame(now) {
   film.uniforms.uRev.value += (rev - film.uniforms.uRev.value) * Math.min(1, dt * 6);
   film.uniforms.uFlash.value = flash;
   film.uniforms.uDark.value = shut * 0.6;
-  bloom.strength = 0.85 + burst * 0.6 + Math.min(av, 30) * 0.015;
+  bloom.strength = (0.85 + burst * 0.6 + Math.min(av, 30) * 0.015) * Math.min(1, 2.2 / QUALITY[qLevel].bloom);
 
   composer.render();
 
@@ -580,7 +601,13 @@ function frame(now) {
   $('#tc').textContent = tc(pos * 2);
   $('#spd').textContent = vel < -0.6 ? '◀◀ REWIND ×' + (-vel / 2).toFixed(1) : av > 3 ? '▶▶ ×' + (vel / 2).toFixed(1) : '';
   $('#spd').classList.toggle('rev', vel < -0.6);
-  marker.style.top = (pos / total * 100) + '%';
+  const f = Math.min(1, pos / playable);
+  $('#scrub .fill').style.width = (f * 100) + '%';
+  $('#scrub .head').style.left = (f * 100) + '%';
+  const ts = slot.kind === 'credits' ? totalDur : cumDur[k] + Math.min(1, (pos - slot.start) / slot.len) * slot.dur;
+  $('#time').innerHTML = mmss(ts / SPEEDS[speedIdx]) + ' <span>/ ' + mmss(totalDur / SPEEDS[speedIdx]) + '</span>';
+  $('#deck-sec').textContent = secName(si);
+  $('#deck').classList.toggle('idle', auto && performance.now() - lastMove > 2600 && !scrubbing);
 
   // sound
   const sw = lp < -0.15 ? 0 : 1;
@@ -640,8 +667,6 @@ $('#rewind').onclick = () => { setAuto(false); flyTo(0); };
 $('#play').onclick = () => setAuto(!auto);
 $('#back').onclick = () => step(-1);
 $('#fwd').onclick = () => step(1);
-$('#slower').onclick = () => setSpeed(speedIdx - 1);
-$('#faster').onclick = () => setSpeed(speedIdx + 1);
 setSpeed(speedIdx);
 applyQuality();
 window.cbu = { get q() { return qLevel; }, flyTo, slots, secInfo, UNIT, score, get pos() { return pos; } };

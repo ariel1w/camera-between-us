@@ -134,11 +134,27 @@ export class Score {
     this.music = ctx.createGain(); this.music.gain.value = 1;
     this.music.connect(this.bus);
     const mv = ctx.createGain(); mv.gain.value = 0.18; this.music.connect(mv); mv.connect(this.verbIn);
+    // SPACE: the recorded music floats in a huge dark hall, with echoes drifting left and right
+    this.cosmos = ctx.createConvolver(); this.cosmos.buffer = makeIR(ctx, 9, 2.2);
+    const pre = ctx.createDelay(1); pre.delayTime.value = 0.09;
+    const cHi = ctx.createBiquadFilter(); cHi.type = 'highpass'; cHi.frequency.value = 280;
+    this.spaceSend = ctx.createGain(); this.spaceSend.gain.value = 0.55;
+    this.music.connect(this.spaceSend); this.spaceSend.connect(cHi); cHi.connect(pre); pre.connect(this.cosmos);
+    const cOut = ctx.createGain(); cOut.gain.value = 0.5; this.cosmos.connect(cOut); cOut.connect(this.mfilt);
+    // ping-pong echoes, darker on each bounce, slowly wavering like light through water
+    const dl = ctx.createDelay(2), dr = ctx.createDelay(2); dl.delayTime.value = 0.43; dr.delayTime.value = 0.65;
+    const fb = ctx.createGain(); fb.gain.value = 0.42;
+    const dF = ctx.createBiquadFilter(); dF.type = 'lowpass'; dF.frequency.value = 3200;
+    const mL = ctx.createChannelMerger(2), eIn = ctx.createGain(); eIn.gain.value = 0.22;
+    const lfo = ctx.createOscillator(), lfoG = ctx.createGain(); lfo.frequency.value = 0.11; lfoG.gain.value = 0.004; lfo.connect(lfoG); lfoG.connect(dl.delayTime); lfoG.connect(dr.delayTime); lfo.start();
+    this.music.connect(eIn); eIn.connect(dl); dl.connect(dF); dF.connect(dr); dr.connect(fb); fb.connect(dl);
+    dl.connect(mL, 0, 0); dr.connect(mL, 0, 1);
+    const eOut = ctx.createGain(); eOut.gain.value = 0.55; mL.connect(eOut); eOut.connect(this.mfilt); eOut.connect(this.cosmos);
     this.an = ctx.createAnalyser(); this.an.fftSize = 1024; this.an.smoothingTimeConstant = 0.5; this.music.connect(this.an);
     this.fbuf = new Uint8Array(this.an.frequencyBinCount); this.avgB = 0; this.avgT = 0;
     this.cues = {};
     for (const [k, f] of Object.entries(CUE_FILES)) {
-      const el = new Audio('audio/' + f + '.mp3?v=11');
+      const el = new Audio('audio/' + f + '.mp3?v=12');
       el.preload = 'auto'; el.loop = k !== 'finale'; el.preservesPitch = false; el.mozPreservesPitch = false; el.webkitPreservesPitch = false;
       el.crossOrigin = 'anonymous';
       const src = ctx.createMediaElementSource(el), g = ctx.createGain(); g.gain.value = 0;
@@ -148,7 +164,7 @@ export class Score {
       el.muted = true; el.play().then(() => { el.muted = false; if (this.cue !== k || !this.running || this.muted) el.pause(); }).catch(() => { el.muted = false; });
     }
     this.cue = null;
-    fetch('audio/hits.mp3?v=11').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this.buf.hits = buf; this.buf.hitsR = reversed(ctx, buf); }).catch(() => {});
+    fetch('audio/hits.mp3?v=12').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this.buf.hits = buf; this.buf.hitsR = reversed(ctx, buf); }).catch(() => {});
 
     await this.renderOneShots();
     this.out.gain.setTargetAtTime(this.muted ? 0 : 0.9, ctx.currentTime, 0.8);
@@ -516,6 +532,15 @@ export class Score {
     set(B.rumble, st.rumble * 0.8); set(B.fire, st.fire * 0.3);
     set(B.wind, Math.min(0.4, Math.max(0, av - 2) * 0.025), 0.1);
     B.wind.fl.frequency.setTargetAtTime(300 + av * 110, now, 0.1);
+
+    // stars of sound: struck bells drifting around your head, in the music's key
+    this.nextSparkle -= dt * (0.25 + av * 0.08) * (st.bells == null ? 1 : st.bells);
+    if (this.running && this.nextSparkle <= 0 && !st.freeze && !st.credits) {
+      this.nextSparkle = 0.8 + Math.random() * 1.8;
+      const PENT = [63, 65, 67, 70, 72, 75, 77, 79, 82, 84], n = PENT[Math.floor(Math.random() * PENT.length)];
+      const a = Math.random() * Math.PI * 2, r = 3 + Math.random() * 5;
+      this.play(rev ? 'bellR' : 'bell', { rate: mtof(n) / 523.25, gain: 0.07 + Math.random() * 0.05, pos: [Math.cos(a) * r, (Math.random() - 0.3) * 3, Math.sin(a) * r], verb: 1.2 });
+    }
 
     const dir = v < -0.6 ? -1 : v > 0.6 ? 1 : this.dir;
     if (dir !== this.dir) { if (dir < 0) this.play('swellR', { gain: 0.4, verb: 0.6 }); this.dir = dir; }

@@ -3,10 +3,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SECTIONS } from './content.js?v=15';
-import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=15';
-import { Score } from './audio.js?v=15';
-import { Presence } from './presences.js?v=15';
+import { SECTIONS } from './content.js?v=16';
+import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=16';
+import { Score } from './audio.js?v=16';
+import { Presence } from './presences.js?v=16';
 
 const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 600;
@@ -171,7 +171,7 @@ const SKY_LEVEL = [0.55, 0.5, 0.55, 0.55, 0.5, 0.75, 0.65, 0.5, 0.45, 0.5, 0.55,
 const skyLoader = new THREE.TextureLoader();
 const skies = SKY_FILES.map((name, k) => {
   const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-  skyLoader.load('img/bg-' + name + '.jpg?v=15', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
+  skyLoader.load('img/bg-' + name + '.jpg?v=16', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(680, 383), mat);
   mesh.position.z = -175; mesh.renderOrder = -10; mesh.visible = false; mesh.frustumCulled = false;
   scene.add(mesh);
@@ -920,7 +920,7 @@ function renderText(k, si) {
     el.style.filter = bl > 0.15 ? `blur(${bl.toFixed(1)}px)` : 'none';
     if (!el._on) {
       el._on = true; el.classList.add('on');
-      if (s.hero && Math.abs(vel) < 6) { score.accent(); score.phrase('hero'); camKick = 1; }
+      if (s.hero && Math.abs(vel) < 6) { score.accent(); camKick = 1; }
       // the voice passes across the screen
       if (s.kind === 'line' && (s.line.s === 'N' || s.line.s === 'L')) {
         if (lastSpeaker && lastSpeaker !== s.line.s && Math.abs(vel) < 8) beam(lastSpeaker, s.line.s);

@@ -304,3 +304,6 @@ body[data-who="L"] #shade::after { opacity: 1; }
 .ttl.on .name { animation: nameIn 1.2s cubic-bezier(.2,.8,.2,1) .35s both; }
 @keyframes nameIn { from { opacity: 0; letter-spacing: .35em; filter: blur(6px); } to { opacity: 1; letter-spacing: 0; filter: none; } }
 .ttl .num::before { content: ""; }
+
+#ver { position: fixed; right: 10px; bottom: 8px; font: 10px var(--mono); color: rgba(255,255,255,.22); z-index: 11; pointer-events: none; }
+#gate.gone ~ #ver { display: none; }

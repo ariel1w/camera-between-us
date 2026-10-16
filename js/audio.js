@@ -161,7 +161,7 @@ export class Score {
     this.fbuf = new Uint8Array(this.an.frequencyBinCount); this.avgB = 0; this.avgT = 0;
     this.cues = {};
     for (const [k, f] of Object.entries(CUE_FILES)) {
-      const el = new Audio('audio/' + f + '.mp3?v=15');
+      const el = new Audio('audio/' + f + '.mp3?v=16');
       el.preload = 'auto'; el.loop = false; el.preservesPitch = false; el.mozPreservesPitch = false; el.webkitPreservesPitch = false;
       el.crossOrigin = 'anonymous';
       const src = ctx.createMediaElementSource(el), g = ctx.createGain(); g.gain.value = 0;
@@ -171,7 +171,7 @@ export class Score {
       el.muted = true; el.play().then(() => { el.muted = false; if (this.cue !== k || !this.running || this.muted) el.pause(); }).catch(() => { el.muted = false; });
     }
     this.cue = null;
-    fetch('audio/hits.mp3?v=15').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this.buf.hits = buf; this.buf.hitsR = reversed(ctx, buf); }).catch(() => {});
+    fetch('audio/hits.mp3?v=16').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this.buf.hits = buf; this.buf.hitsR = reversed(ctx, buf); }).catch(() => {});
 
     await this.renderOneShots();
     this.out.gain.setTargetAtTime(this.muted ? 0 : 0.9, ctx.currentTime, 0.8);
@@ -428,7 +428,7 @@ export class Score {
     key = key || CUE_OF[Math.max(0, this.mood)] || 'cosmic';
     const dur = kind === 'finale' ? 1e9 : kind === 'section' ? 8.5 + Math.random() * 1.5 : 7;
     if (playing && kind === 'hero') { this.phraseEnd = Math.min(this.phraseStart + 10, Math.max(this.phraseEnd, now + 5)); return; } // a phrase never runs past 10 s
-    if (kind === 'hero' && now < this.quietUntil) return; // let the air breathe between phrases
+    if (kind !== 'finale' && now < this.quietUntil) return; // at least 30 s of air and nature between phrases
     const c = this.cues[key];
     if (key !== this.cue || !playing) {
       const D = c.el.duration;
@@ -556,7 +556,7 @@ export class Score {
         if (forward && step === 1) { setTimeout(() => this.hit(0.5), 200); setTimeout(() => this.phrase('section'), 900); }
       }
       const live = this.cue && now < this.phraseEnd;
-      if (this.cue && !live && this.wasLive) this.quietUntil = now + 6;
+      if (this.cue && !live && this.wasLive) this.quietUntil = now + 30;
       this.wasLive = live;
       const rev = v < -0.6;
       let rate = rev ? 0.72 : 1 + Math.max(-0.2, Math.min(0.5, v * 0.025));

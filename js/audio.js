@@ -1,9 +1,8 @@
-// The score: real recorded music generated with Gemini (felt piano, harp,
-// celesta, a dark piano, a space piece, an orchestral finale), one piece per
-// section, crossfading as you fly. Scrolling bends it like tape: faster speeds
-// it up, rewinding slows it down. Recorded orchestral hits mark the great
-// moments. Sound design (rain, shutters, thunder, the opening boom...) is
-// synthesized live. No sustained synth tones anywhere.
+// The sound: a living world of air, wind, birds and scattered magic, with
+// music that ARRIVES with the story and leaves again. Recorded phrases (Gemini)
+// swell in at section openings, hero lines and the great turns, play their
+// moment, then dissolve back into the air. Neil's lines tint the music warm,
+// Lumen's glassy. Scrolling bends a phrase like tape. Only the finale plays on.
 
 const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
 
@@ -90,7 +89,7 @@ export class Score {
     this.buf = {};
     this.ready = false; this.muted = false; this.t = 0; this.lastStep = 0; this.dir = 1;
     this.running = false; this.mood = -1; this.ci = 0; this.chordT = 0; this.cur = null;
-    this.hitK = 0; this.boost = 0; this.nextSparkle = 2; this.themeK = 0; this.chordCount = 0; this.visualEvents = [];
+    this.hitK = 0; this.phraseAt = {}; this.phraseEnd = 0; this.quietUntil = 0; this.who = 'N'; this.boost = 0; this.nextSparkle = 2; this.themeK = 0; this.chordCount = 0; this.visualEvents = [];
     this.tape = 1; this.tempo = 1; this.nextNote = 0; this.step = 99; this.stepsInChord = 8; this.pattern = [0];
   }
 
@@ -129,12 +128,18 @@ export class Score {
       rumble: bed('lowpass', 85, 1.2),
       wind: bed('bandpass', 600, 1.4),
       fire: bed('lowpass', 900, 0.6),
+      air: bed('bandpass', 650, 0.6),
+      airHi: bed('highpass', 6500, 0.5),
     };
+    this.gust = 0; this.gustT = 0; this.nextBird = 3; this.nextCricket = 0;
     // the recorded score
     // the music sits UNDER the sound of the world: effects lead, music carries
     this.musicLevel = 0.42;
     this.music = ctx.createGain(); this.music.gain.value = this.musicLevel;
-    this.music.connect(this.bus);
+    // the voice of the moment colours the music: Neil warm and close, Lumen glassy and high
+    this.toneLo = ctx.createBiquadFilter(); this.toneLo.type = 'lowshelf'; this.toneLo.frequency.value = 250;
+    this.toneHi = ctx.createBiquadFilter(); this.toneHi.type = 'highshelf'; this.toneHi.frequency.value = 3500;
+    this.music.connect(this.toneLo); this.toneLo.connect(this.toneHi); this.toneHi.connect(this.bus);
     const mv = ctx.createGain(); mv.gain.value = 0.18; this.music.connect(mv); mv.connect(this.verbIn);
     // SPACE: the recorded music floats in a huge dark hall, with echoes drifting left and right
     this.cosmos = ctx.createConvolver(); this.cosmos.buffer = makeIR(ctx, 9, 2.2);
@@ -156,8 +161,8 @@ export class Score {
     this.fbuf = new Uint8Array(this.an.frequencyBinCount); this.avgB = 0; this.avgT = 0;
     this.cues = {};
     for (const [k, f] of Object.entries(CUE_FILES)) {
-      const el = new Audio('audio/' + f + '.mp3?v=13');
-      el.preload = 'auto'; el.loop = k !== 'finale'; el.preservesPitch = false; el.mozPreservesPitch = false; el.webkitPreservesPitch = false;
+      const el = new Audio('audio/' + f + '.mp3?v=15');
+      el.preload = 'auto'; el.loop = false; el.preservesPitch = false; el.mozPreservesPitch = false; el.webkitPreservesPitch = false;
       el.crossOrigin = 'anonymous';
       const src = ctx.createMediaElementSource(el), g = ctx.createGain(); g.gain.value = 0;
       src.connect(g); g.connect(this.music);
@@ -166,7 +171,7 @@ export class Score {
       el.muted = true; el.play().then(() => { el.muted = false; if (this.cue !== k || !this.running || this.muted) el.pause(); }).catch(() => { el.muted = false; });
     }
     this.cue = null;
-    fetch('audio/hits.mp3?v=13').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this.buf.hits = buf; this.buf.hitsR = reversed(ctx, buf); }).catch(() => {});
+    fetch('audio/hits.mp3?v=15').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this.buf.hits = buf; this.buf.hitsR = reversed(ctx, buf); }).catch(() => {});
 
     await this.renderOneShots();
     this.out.gain.setTargetAtTime(this.muted ? 0 : 0.9, ctx.currentTime, 0.8);
@@ -288,6 +293,27 @@ export class Score {
       for (let i = 0; i < 60; i++) d[i] *= i / 60;
       B[name] = buf;
     }
+    // birds: little FM chirps and trills, a few different songs
+    for (let v = 0; v < 4; v++) {
+      B['bird' + v] = await render(1.4, oc => {
+        const n = 2 + Math.floor(Math.random() * 5), base = 2600 + Math.random() * 1800, gap = 0.07 + Math.random() * 0.09;
+        for (let k = 0; k < n; k++) {
+          const t0 = k * gap, d = 0.04 + Math.random() * 0.06, o = oc.createOscillator(), m = oc.createOscillator(), mg = oc.createGain();
+          const f0 = base * (0.85 + Math.random() * 0.3), f1 = f0 * (v % 2 ? 1.5 : 0.7);
+          o.frequency.setValueAtTime(f0, t0); o.frequency.exponentialRampToValueAtTime(f1, t0 + d);
+          m.frequency.value = 40 + Math.random() * 60; mg.gain.value = f0 * 0.04; m.connect(mg); mg.connect(o.frequency);
+          const g = oc.createGain(); g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.25, t0 + 0.008); g.gain.exponentialRampToValueAtTime(0.001, t0 + d);
+          o.connect(g); g.connect(oc.destination); o.start(t0); m.start(t0); o.stop(t0 + d + 0.02); m.stop(t0 + d + 0.02);
+        }
+      });
+    }
+    B.cricket = await render(0.5, oc => {
+      for (let k = 0; k < 4; k++) {
+        const t0 = k * 0.045, o = oc.createOscillator(); o.frequency.value = 4400;
+        const g = oc.createGain(); g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.12, t0 + 0.006); g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.03);
+        o.connect(g); g.connect(oc.destination); o.start(t0); o.stop(t0 + 0.04);
+      }
+    });
     for (const k of ['bell', 'swell', 'click', 'crack', 'pno3', 'pno4', 'pno5', 'harp3', 'harp4']) B[k + 'R'] = reversed(this.ctx, B[k]);
   }
 
@@ -392,6 +418,35 @@ export class Score {
     for (let k = 0; k < 8; k++) this.visualEvents.push({ at: at + 8 + k * 0.9, gain: 0.5, bass: true });
   }
 
+  // MUSIC ARRIVES WITH THE STORY. kind: 'section' (a new chapter opens),
+  // 'hero' (a great line), 'finale' (the last piece, plays to the end)
+  phrase(kind, key) {
+    if (!this.ready || !this.running || !this.cues || this.muted) return;
+    const now = this.ctx.currentTime, playing = this.cue && now < this.phraseEnd;
+    if (kind === 'finale') key = 'finale';
+    else if (this.cue === 'finale' && playing) return;
+    key = key || CUE_OF[Math.max(0, this.mood)] || 'cosmic';
+    const dur = kind === 'finale' ? 1e9 : kind === 'section' ? 8.5 + Math.random() * 1.5 : 7;
+    if (playing && kind === 'hero') { this.phraseEnd = Math.min(this.phraseStart + 10, Math.max(this.phraseEnd, now + 5)); return; } // a phrase never runs past 10 s
+    if (kind === 'hero' && now < this.quietUntil) return; // let the air breathe between phrases
+    const c = this.cues[key];
+    if (key !== this.cue || !playing) {
+      const D = c.el.duration;
+      if (kind === 'finale') c.el.currentTime = 0;
+      else if (D > 50) {
+        // start somewhere new in the piece each time, never near its end
+        const at = ((this.phraseAt[key] ?? Math.random() * D * 0.5) + 37) % (D - dur - 6);
+        this.phraseAt[key] = at; c.el.currentTime = at;
+      }
+      c.g.gain.cancelScheduledValues(now); c.g.gain.setValueAtTime(0, now);
+    }
+    if (key !== this.cue || !playing) this.phraseStart = now;
+    this.cue = key; this.phraseEnd = kind === 'finale' ? now + dur : Math.min(now + dur, this.phraseStart + 10); this.phraseKind = kind;
+    this.tryPlay(c);
+  }
+
+  voice(who) { this.who = who; }
+
   tryPlay(c) {
     if (!c || c.pending || this.muted || c.el.ended) return;
     const now = this.ctx ? this.ctx.currentTime : 0;
@@ -472,7 +527,8 @@ export class Score {
   boom() {
     this.play('boom', { gain: 1, verb: 0.8 });
     this.play('click', { rate: 0.5, gain: 1.1, verb: 1 });
-    this.running = true;
+    this.running = true; this.mood = 0;
+    setTimeout(() => this.phrase('section', CUE_OF[0]), 2500);
   }
 
   setMuted(m) {
@@ -491,32 +547,37 @@ export class Score {
     this.boost *= Math.exp(-dt * 0.25);
     const I = Math.min(1, st.intensity + this.boost + Math.min(av, 12) * 0.012);
 
-    // the recorded score: one piece per section, crossfading; tape speed follows the scroll
+    // the music: phrases that arrive with the story and dissolve back into the air
     if (this.running && this.cues) {
-      const want = CUE_OF[st.mood] || 'cosmic';
-      if (want !== this.cue) {
-        const forward = st.mood > this.mood;
-        if (this.mood >= 0 && forward && Math.abs(st.mood - this.mood) === 1) setTimeout(() => this.hit(0.55), 200);
-        this.cue = want; this.mood = st.mood;
-        const c = this.cues[want];
-        if (want === 'finale' && (forward || c.el.ended)) c.el.currentTime = 0;
-        if (c.el.paused) this.tryPlay(c);
-      } else this.mood = st.mood;
+      if (st.mood !== this.mood) {
+        const forward = st.mood > this.mood, step = st.mood - this.mood;
+        this.mood = st.mood;
+        if (this.cue === 'finale' && st.mood < 15) this.phraseEnd = now; // left the finale
+        if (forward && step === 1) { setTimeout(() => this.hit(0.5), 200); setTimeout(() => this.phrase('section'), 900); }
+      }
+      const live = this.cue && now < this.phraseEnd;
+      if (this.cue && !live && this.wasLive) this.quietUntil = now + 6;
+      this.wasLive = live;
       const rev = v < -0.6;
       let rate = rev ? 0.72 : 1 + Math.max(-0.2, Math.min(0.5, v * 0.025));
       if (st.freeze) rate = 0.9;
       for (const [k, c] of Object.entries(this.cues)) {
-        const target = k === this.cue ? CUE_GAIN[k] * (rev ? 0.45 : 1) * (st.freeze ? 0.5 : 1) * (st.credits && k === 'finale' ? 0.55 : 1) : 0;
-        c.g.gain.setTargetAtTime(target, now, k === this.cue ? 1.2 : 0.9);
-        if (k === this.cue) {
+        const on = k === this.cue && live;
+        const target = on ? CUE_GAIN[k] * (rev ? 0.45 : 1) * (st.freeze ? 0.5 : 1) * (st.credits && k === 'finale' ? 0.55 : 1) : 0;
+        c.g.gain.setTargetAtTime(target, now, on ? 0.6 : 1.1);
+        if (on) {
           if (Math.abs(c.el.playbackRate - rate) > 0.02) c.el.playbackRate = c.el.playbackRate + (rate - c.el.playbackRate) * 0.5;
           c.quietSince = 0;
           if (c.el.paused) this.tryPlay(c);
         } else if (!c.el.paused) {
           c.quietSince = c.quietSince || now;
-          if (now - c.quietSince > 4) c.el.pause();
+          if (now - c.quietSince > 9) c.el.pause();
         }
       }
+      // Neil warm and close, Lumen glassy and high (only shapes the music while it plays)
+      const L = this.who === 'L';
+      this.toneLo.gain.setTargetAtTime(L ? -5 : 2, now, 1.2);
+      this.toneHi.gain.setTargetAtTime(L ? 3 : -6, now, 1.2);
       // the music's own pulse drives the picture: bass and treble onsets
       this.an.getByteFrequencyData(this.fbuf);
       let lo = 0, hi = 0;
@@ -533,15 +594,35 @@ export class Score {
     set(B.rain, st.rain * 0.45); set(B.rainLow, st.rain * 0.3);
     set(B.rumble, st.rumble * 0.8); set(B.fire, st.fire * 0.3);
     set(B.wind, Math.min(0.4, Math.max(0, av - 2) * 0.025), 0.1);
+    // the air: never still, gusts come and go; it steps back when music plays
+    this.gustT -= dt;
+    if (this.gustT <= 0) { this.gustT = 3 + Math.random() * 7; this.gustTo = Math.random() < 0.35 ? 0.6 + Math.random() * 0.4 : Math.random() * 0.3; }
+    this.gust += ((this.gustTo || 0) - this.gust) * Math.min(1, dt * 0.35);
+    const musicOn = this.cue && now < this.phraseEnd, airK = (musicOn ? 0.55 : 1) * (st.credits ? 0.3 : 1) * (st.air == null ? 1 : st.air);
+    set(B.air, (0.05 + this.gust * 0.13) * airK, 0.6); set(B.airHi, (0.012 + this.gust * 0.03) * airK, 0.6);
+    B.air.fl.frequency.setTargetAtTime(420 + this.gust * 700 + av * 25, now, 0.8);
+    // birds far and near
+    if (st.birds > 0 && !st.freeze) {
+      this.nextBird -= dt * st.birds;
+      if (this.nextBird <= 0) {
+        this.nextBird = 1.2 + Math.random() * 4.5;
+        const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * 9;
+        this.play('bird' + Math.floor(Math.random() * 4), { rate: 0.85 + Math.random() * 0.3, gain: 0.1 + Math.random() * 0.12, pos: [Math.cos(a) * r, 1 + Math.random() * 3, Math.sin(a) * r], verb: 0.25 });
+      }
+    }
+    if (st.crickets > 0) {
+      this.nextCricket -= dt;
+      if (this.nextCricket <= 0) { this.nextCricket = 0.5 + Math.random() * 0.9; this.play('cricket', { rate: 0.95 + Math.random() * 0.1, gain: 0.05 * st.crickets, pos: this.rndPos(5 + Math.random() * 5), verb: 0.2 }); }
+    }
     B.wind.fl.frequency.setTargetAtTime(300 + av * 110, now, 0.1);
 
     // stars of sound: struck bells drifting around your head, in the music's key
     this.nextSparkle -= dt * (0.25 + av * 0.08) * (st.bells == null ? 1 : st.bells);
     if (this.running && this.nextSparkle <= 0 && !st.freeze && !st.credits) {
-      this.nextSparkle = 0.8 + Math.random() * 1.8;
+      this.nextSparkle = 2.5 + Math.random() * 4;
       const PENT = [63, 65, 67, 70, 72, 75, 77, 79, 82, 84], n = PENT[Math.floor(Math.random() * PENT.length)];
       const a = Math.random() * Math.PI * 2, r = 3 + Math.random() * 5;
-      this.play(rev ? 'bellR' : 'bell', { rate: mtof(n) / 523.25, gain: 0.07 + Math.random() * 0.05, pos: [Math.cos(a) * r, (Math.random() - 0.3) * 3, Math.sin(a) * r], verb: 1.2 });
+      this.play(rev ? 'bellR' : 'bell', { rate: mtof(n) / 523.25, gain: 0.05 + Math.random() * 0.05, pos: [Math.cos(a) * r, (Math.random() - 0.3) * 3, Math.sin(a) * r], verb: 1.2 });
     }
 
     const dir = v < -0.6 ? -1 : v > 0.6 ? 1 : this.dir;

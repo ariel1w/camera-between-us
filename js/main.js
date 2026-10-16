@@ -3,10 +3,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SECTIONS } from './content.js?v=13';
-import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=13';
-import { Score } from './audio.js?v=13';
-import { Presence } from './presences.js?v=13';
+import { SECTIONS } from './content.js?v=15';
+import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=15';
+import { Score } from './audio.js?v=15';
+import { Presence } from './presences.js?v=15';
 
 const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 600;
@@ -171,7 +171,7 @@ const SKY_LEVEL = [0.55, 0.5, 0.55, 0.55, 0.5, 0.75, 0.65, 0.5, 0.45, 0.5, 0.55,
 const skyLoader = new THREE.TextureLoader();
 const skies = SKY_FILES.map((name, k) => {
   const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-  skyLoader.load('img/bg-' + name + '.jpg?v=13', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
+  skyLoader.load('img/bg-' + name + '.jpg?v=15', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(680, 383), mat);
   mesh.position.z = -175; mesh.renderOrder = -10; mesh.visible = false; mesh.frustumCulled = false;
   scene.add(mesh);
@@ -459,7 +459,7 @@ const EVENTS = [
   [10, 'You pressed the shutter.', () => { score.play('click', { gain: 1.3, verb: 0.6 }); score.hit(0.5); flash = 0.6; }],
   [12, 'Grambles.', () => score.play('swellR', { rate: 1.3, gain: 0.6, verb: 1 })],
   [15, 'So perhaps the camera was never freezing time.', () => { score.windup(2.2); }],
-  [15, 'It was showing us that time cannot be frozen.', () => { score.play('crack', { gain: 0.8, verb: 0.8 }); score.play('boom', { gain: 0.8, verb: 0.9 }); score.climax(); flash = 0.9; }],
+  [15, 'It was showing us that time cannot be frozen.', () => { score.play('crack', { gain: 0.8, verb: 0.8 }); score.play('boom', { gain: 0.8, verb: 0.9 }); score.climax(); setTimeout(() => score.phrase('finale'), 9000); flash = 0.9; }],
   [15, 'The beginning of the question.', () => { score.hit(1.4); [0, 4, 7, 12].forEach((n, k) => score.play('bell', { rate: Math.pow(2, (n + 3) / 12), gain: 0.3, when: 0.4 + k * 0.22, verb: 1 })); }],
 ].map(([si, txt, fn]) => {
   const li = SECTIONS[si].lines.findIndex(l => l.t.startsWith(txt));
@@ -812,6 +812,9 @@ function frame(now) {
     glitch: si === 7 && q.gen >= 0 && q.all < 0 ? 1 : 0,
     shutters: si === 10 && q.every >= 0 && q.truth < 0 ? (q.billions >= 0 ? 3 : 1) : 0,
     walk: si === 9 && q.ret < 0 && lp > 0 ? 1 : 0,
+    birds: [0.5, 0, 1, 0.6, 0, 0, 0, 0, 0, 0, 0.2, 0.5, 0.3, 0.4, 0.7, 0.4][si] * (rainAmt > 0.3 ? 0 : 1),
+    crickets: si === 5 ? 1 : si === 12 ? 0.5 : 0,
+    air: si === 6 ? 0.5 : si === 8 ? 0.4 : 1,
     credits: slot.kind === 'credits',
   });
 }
@@ -917,7 +920,7 @@ function renderText(k, si) {
     el.style.filter = bl > 0.15 ? `blur(${bl.toFixed(1)}px)` : 'none';
     if (!el._on) {
       el._on = true; el.classList.add('on');
-      if (s.hero && Math.abs(vel) < 6) { score.accent(); camKick = 1; }
+      if (s.hero && Math.abs(vel) < 6) { score.accent(); score.phrase('hero'); camKick = 1; }
       // the voice passes across the screen
       if (s.kind === 'line' && (s.line.s === 'N' || s.line.s === 'L')) {
         if (lastSpeaker && lastSpeaker !== s.line.s && Math.abs(vel) < 8) beam(lastSpeaker, s.line.s);
@@ -966,13 +969,25 @@ function beam(from, to) {
     { transform: `translate(${x2}px, ${y2}px) rotate(${ang}rad) scaleX(0.05)`, opacity: 0 },
   ], { duration: 950, easing: 'cubic-bezier(.4,0,.2,1)' });
   score.play('swell', { rate: to === 'L' ? 1.8 : 1.4, gain: 0.12, verb: 0.6 });
+  score.voice(to);
 }
 
 // ------------------------------------------------------------ start
 document.documentElement.classList.add('locked');
 window.scrollTo(0, 0);
 $('#begin').disabled = false;
-$('#begin').textContent = MOBILE ? 'Tap to begin' : 'Click to begin';
+$('#begin').textContent = 'My headphones are on';
+// the gate: on a phone or tablet, ask for a computer first; then ask for headphones
+// (browsers cannot detect headphones without microphone permission, so we ask)
+const gateStep = id => { document.querySelectorAll('.g-step').forEach(e => e.classList.toggle('on', e.id === id)); };
+if (MOBILE || /iPad|iPhone|Android|Mobile/i.test(navigator.userAgent)) gateStep('g-device');
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => gateStep(b.dataset.go));
+document.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => {
+  const url = location.href.split('?')[0].split('#')[0];
+  try { if (navigator.share && MOBILE) await navigator.share({ title: document.title, url }); else { await navigator.clipboard.writeText(url); b.textContent = 'Link copied. See you there.'; } }
+  catch (e) { b.textContent = url; }
+});
+$('#begin-anyway').onclick = () => $('#begin').onclick();
 if (MOBILE) $('#hint div:last-child').innerHTML = 'Swipe up to fly. Swipe down to rewind time.<br>Or press Play and let it fly.';
 $('#begin').onclick = async () => {
   if ($('#begin').dataset.used) return; $('#begin').dataset.used = '1'; $('#begin').disabled = true;

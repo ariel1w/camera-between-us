@@ -275,7 +275,7 @@ function watchFps(dt) {
   fpsAcc += dt; fpsN++; fpsT += dt;
   if (fpsT < 2.5) return;
   const fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; fpsT = 0;
-  if (fps < 30 && qLevel < QUALITY.length - 1) { qLevel++; applyQuality(); }
+  if (fps < 40 && qLevel < QUALITY.length - 1) { qLevel++; applyQuality(); }
   else if (fps > 52 && qLevel > 0 && Math.min(QUALITY[qLevel - 1].pr, DPR) > Math.min(QUALITY[qLevel].pr, DPR) - 0.01) { qLevel--; applyQuality(); }
 }
 
@@ -571,7 +571,9 @@ function frame(now) {
 
   // move every particle
   for (let k2 = 0; k2 < TR; k2++) { const sl = Math.floor(k2 * N / TR) * 3; PREV[k2 * 3] = POS[sl]; PREV[k2 * 3 + 1] = POS[sl + 1]; PREV[k2 * 3 + 2] = POS[sl + 2]; }
+  const drawN = geo.drawRange.count === Infinity ? N : Math.min(N, geo.drawRange.count);
   for (let i = 0; i < N; i++) {
+    if (PERM[i] >= drawN) continue; // not drawn at this quality level: skip the work too
     let w = m >= 1 ? 1 : m <= 0 ? 0 : Math.min(1, Math.max(0, m * 1.6 - ((i * 0.6180339) % 1) * 0.6));
     w = w * w * (3 - 2 * w);
     let x, y, z, r, g, b, s;

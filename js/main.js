@@ -3,10 +3,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SECTIONS } from './content.js?v=10';
-import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=10';
-import { Score } from './audio.js?v=10';
-import { Presence } from './presences.js?v=10';
+import { SECTIONS } from './content.js?v=11';
+import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=11';
+import { Score } from './audio.js?v=11';
+import { Presence } from './presences.js?v=11';
 
 const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 600;
@@ -171,7 +171,7 @@ const SKY_LEVEL = [0.55, 0.5, 0.55, 0.55, 0.5, 0.75, 0.65, 0.5, 0.45, 0.5, 0.55,
 const skyLoader = new THREE.TextureLoader();
 const skies = SKY_FILES.map((name, k) => {
   const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-  skyLoader.load('img/bg-' + name + '.jpg?v=10', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
+  skyLoader.load('img/bg-' + name + '.jpg?v=11', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(680, 383), mat);
   mesh.position.z = -175; mesh.renderOrder = -10; mesh.visible = false; mesh.frustumCulled = false;
   scene.add(mesh);
@@ -451,16 +451,16 @@ const EVENTS = [
   [6, 'The Wide-field Infrared Survey Explorer', () => { score.play('swellR', { rate: 0.8, gain: 0.5, verb: 0.8 }); }],
   [8, 'Did I see it?', () => { for (let k = 0; k < 6; k++) score.play('blip', { rate: 0.3 + Math.random(), gain: 0.4, when: k * 0.05, pos: score.rndPos(2) }); }],
   [9, 'Later, it rains.', () => { score.play('thunder', { gain: 1, verb: 0.6 }); score.hit(1); flash = 0.45; }],
-  [9, 'A small change enters a network of lives.', () => score.hit(0.8)],
+  [9, 'A small change enters a network of lives.', () => score.climax()],
   [9, 'We do not merely exist in time.', () => score.hit(1.2)],
   [13, 'The thought travels between us.', () => score.hit(0.7)],
   [15, 'Perhaps that is ultimately why the camera matters.', () => score.hit(0.6)],
-  [9, 'With the information:', () => score.play('bell', { rate: 0.5, gain: 0.6, verb: 1 })],
+  [9, 'With the information:', () => score.play('bell', { rate: Math.pow(2, 3 / 12) * 0.5, gain: 0.5, verb: 1 })],
   [10, 'You pressed the shutter.', () => { score.play('click', { gain: 1.3, verb: 0.6 }); score.hit(0.5); flash = 0.6; }],
   [12, 'Grambles.', () => score.play('swellR', { rate: 1.3, gain: 0.6, verb: 1 })],
   [15, 'So perhaps the camera was never freezing time.', () => { score.windup(2.2); }],
-  [15, 'It was showing us that time cannot be frozen.', () => { score.play('crack', { gain: 0.8, verb: 0.8 }); score.play('boom', { gain: 0.8, verb: 0.9 }); score.hit(1.6); flash = 0.9; }],
-  [15, 'The beginning of the question.', () => { score.hit(1.6); [0, 4, 7, 12].forEach((n, k) => score.play('bell', { rate: Math.pow(2, (n - 3) / 12), gain: 0.35, when: 0.4 + k * 0.22, verb: 1 })); }],
+  [15, 'It was showing us that time cannot be frozen.', () => { score.play('crack', { gain: 0.8, verb: 0.8 }); score.play('boom', { gain: 0.8, verb: 0.9 }); score.climax(); flash = 0.9; }],
+  [15, 'The beginning of the question.', () => { score.hit(1.4); [0, 4, 7, 12].forEach((n, k) => score.play('bell', { rate: Math.pow(2, (n + 3) / 12), gain: 0.3, when: 0.4 + k * 0.22, verb: 1 })); }],
 ].map(([si, txt, fn]) => {
   const li = SECTIONS[si].lines.findIndex(l => l.t.startsWith(txt));
   if (li < 0) console.warn('event line missing', txt);

@@ -1,9 +1,9 @@
-// The score and sound design, all synthesized in the browser.
-// No sustained tones anywhere: the music is made only of struck and plucked
-// sounds that ring and fade (a synthesized piano, a harp, celesta bells),
-// flowing as arpeggios through each section's chords, with the theme on top.
-// Majesty comes from build: denser arpeggios, octaves, harp sweeps, timpani
-// and short swells that bloom and die away at the great moments.
+// The score: real recorded music generated with Gemini (felt piano, harp,
+// celesta, a dark piano, a space piece, an orchestral finale), one piece per
+// section, crossfading as you fly. Scrolling bends it like tape: faster speeds
+// it up, rewinding slows it down. Recorded orchestral hits mark the great
+// moments. Sound design (rain, shutters, thunder, the opening boom...) is
+// synthesized live. No sustained synth tones anywhere.
 
 const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
 
@@ -38,6 +38,13 @@ const THEME = [
   [[4, 0.55], [5, 0.55], [4, 0.9], [2, 0.55], [3, 1.8]],
   [[2, 0.8], [3, 0.8], [1, 1.4]],
 ];
+
+// which recorded piece plays in each section
+const CUE_FILES = { pianoA: 'c-piano-a', harp: 'c-harp', celesta: 'c-celesta', pianoB: 'c-piano-b', space: 'c-space', strings: 'c-strings', finale: 'c-finale' };
+const CUE_OF = ['pianoA', 'harp', 'pianoA', 'strings', 'pianoB', 'space', 'space', 'pianoB', 'pianoB', 'strings', 'celesta', 'harp', 'space', 'strings', 'celesta', 'finale'];
+const CUE_GAIN = { pianoA: 0.9, harp: 0.85, celesta: 0.8, pianoB: 0.9, space: 0.85, strings: 0.9, finale: 1.0 };
+// segments of hits.mp3: three orchestral strikes and a long climax build
+const HITS = [[0, 4.0], [4.0, 3.55], [7.55, 3.55]], CLIMAX = [11.1, 16.5];
 
 // arpeggio shapes, as indices into the chord tones (-1 = rest)
 const PATTERNS = [
@@ -80,9 +87,10 @@ function noiseBuf(ctx, secs) {
 
 export class Score {
   constructor() {
+    this.buf = {};
     this.ready = false; this.muted = false; this.t = 0; this.lastStep = 0; this.dir = 1;
     this.running = false; this.mood = -1; this.ci = 0; this.chordT = 0; this.cur = null;
-    this.boost = 0; this.nextSparkle = 2; this.themeK = 0; this.chordCount = 0; this.visualEvents = [];
+    this.hitK = 0; this.boost = 0; this.nextSparkle = 2; this.themeK = 0; this.chordCount = 0; this.visualEvents = [];
     this.tape = 1; this.tempo = 1; this.nextNote = 0; this.step = 99; this.stepsInChord = 8; this.pattern = [0];
   }
 
@@ -120,13 +128,33 @@ export class Score {
       wind: bed('bandpass', 600, 1.4),
       fire: bed('lowpass', 900, 0.6),
     };
+    // the recorded score
+    this.music = ctx.createGain(); this.music.gain.value = 1;
+    this.music.connect(this.bus);
+    const mv = ctx.createGain(); mv.gain.value = 0.18; this.music.connect(mv); mv.connect(this.verbIn);
+    this.an = ctx.createAnalyser(); this.an.fftSize = 1024; this.an.smoothingTimeConstant = 0.5; this.music.connect(this.an);
+    this.fbuf = new Uint8Array(this.an.frequencyBinCount); this.avgB = 0; this.avgT = 0;
+    this.cues = {};
+    for (const [k, f] of Object.entries(CUE_FILES)) {
+      const el = new Audio('audio/' + f + '.mp3?v=11');
+      el.preload = 'auto'; el.loop = k !== 'finale'; el.preservesPitch = false; el.mozPreservesPitch = false; el.webkitPreservesPitch = false;
+      el.crossOrigin = 'anonymous';
+      const src = ctx.createMediaElementSource(el), g = ctx.createGain(); g.gain.value = 0;
+      src.connect(g); g.connect(this.music);
+      this.cues[k] = { el, g, on: false, quietSince: 0 };
+      // unlock each player inside the click (phones need this)
+      el.muted = true; el.play().then(() => { el.pause(); el.muted = false; }).catch(() => { el.muted = false; });
+    }
+    this.cue = null;
+    fetch('audio/hits.mp3?v=11').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this.buf.hits = buf; this.buf.hitsR = reversed(ctx, buf); }).catch(() => {});
+
     await this.renderOneShots();
     this.out.gain.setTargetAtTime(this.muted ? 0 : 0.9, ctx.currentTime, 0.8);
     this.ready = true;
   }
 
   async renderOneShots() {
-    const B = this.buf = {};
+    const B = this.buf = this.buf || {};
     B.bell = await render(4, oc => { // harp and piano like voice for the theme
       const f = 523.25, parts = [[1, 1, 3.2], [2.0, 0.42, 1.8], [3.0, 0.16, 1.1], [4.02, 0.08, 0.7], [5.4, 0.04, 0.4]];
       for (const [m, a, d] of parts) {
@@ -318,20 +346,45 @@ export class Score {
     }
   }
 
-  hit(strength = 1) { // a great moment: timpani, a harp sweep, a swell
-    if (!this.ready || !this.cur) return;
-    const at = this.ctx.currentTime + 0.05;
-    this.boost = Math.min(0.4, this.boost + 0.25 * strength);
-    this.timp(this.cur.root, 0.5 + strength * 0.35);
-    this.gliss(at + 0.05, Math.min(1, 0.5 + strength * 0.3));
-    this.bloom(this.cur.root + 12, at, Math.min(1.4, strength));
+  // a recorded orchestral strike for the great moments
+  hit(strength = 1) {
+    if (!this.ready) return;
+    const ctx = this.ctx, at = ctx.currentTime + 0.03;
+    if (this.buf.hits) {
+      const [off, dur] = HITS[this.hitK++ % HITS.length];
+      const s = ctx.createBufferSource(); s.buffer = this.buf.hits;
+      const g = ctx.createGain(); g.gain.value = Math.min(1.1, 0.45 + strength * 0.35);
+      s.connect(g); g.connect(this.bus); const vg = ctx.createGain(); vg.gain.value = 0.35; g.connect(vg); vg.connect(this.verbIn);
+      s.start(at, off, dur);
+      this.duck(0.55, 1.6);
+    } else this.timp(50, 0.5 + strength * 0.4);
+    this.visualEvents.push({ at, gain: 0.5 + strength * 0.2, bass: true });
   }
 
-  accent() { // a hero line arrives: a shimmer of celesta and a breath of harp
-    if (!this.ready || !this.cur) return;
-    const at = this.ctx.currentTime + 0.05, { root, iv } = this.cur;
-    [0, 1, 2].forEach((k) => this.play('bell', { rate: mtof(root + 36 + iv[k % iv.length]) / 523.25, gain: 0.12, at: at + k * 0.11, inst: true, pos: [(k - 1) * 1.5, 0.8, -1.4] }));
-    this.gliss(at + 0.1, 0.4);
+  // the long climb of the orchestra, for the biggest moments
+  climax() {
+    if (!this.ready || !this.buf.hits) return this.hit(1.5);
+    const ctx = this.ctx, at = ctx.currentTime + 0.03, [off, dur] = CLIMAX;
+    const s = ctx.createBufferSource(); s.buffer = this.buf.hits;
+    const g = ctx.createGain(); g.gain.value = 0.95; s.connect(g); g.connect(this.bus);
+    s.start(at, off, dur);
+    this.duck(0.35, dur * 0.9);
+    for (let k = 0; k < 8; k++) this.visualEvents.push({ at: at + 8 + k * 0.9, gain: 0.5, bass: true });
+  }
+
+  // music steps back for a moment
+  duck(level, secs) {
+    const now = this.ctx.currentTime;
+    this.music.gain.cancelScheduledValues(now);
+    this.music.gain.setTargetAtTime(level, now, 0.08);
+    this.music.gain.setTargetAtTime(1, now + secs, 0.8);
+  }
+
+  accent() { // a hero line arrives: three high celesta notes in E flat
+    if (!this.ready) return;
+    const at = this.ctx.currentTime + 0.05;
+    [75, 79, 82].forEach((n, k) => this.play('bell', { rate: mtof(n) / 523.25, gain: 0.1, at: at + k * 0.12, inst: true, pos: [(k - 1) * 1.5, 0.8, -1.4] }));
+    this.visualEvents.push({ at, gain: 0.35, bass: false });
   }
 
   // the arpeggio engine: schedules notes slightly ahead on the audio clock
@@ -374,11 +427,12 @@ export class Score {
   boom() {
     this.play('boom', { gain: 1, verb: 0.8 });
     this.play('click', { rate: 0.5, gain: 1.1, verb: 1 });
-    this.running = true; this.nextNote = this.ctx ? this.ctx.currentTime + 0.6 : 0; this.step = 99;
+    this.running = true;
   }
 
   setMuted(m) {
     this.muted = m;
+    if (this.cues) for (const c of Object.values(this.cues)) { if (m) c.el.pause(); }
     if (this.ready) this.out.gain.setTargetAtTime(m ? 0 : 0.9, this.ctx.currentTime, 0.2);
   }
 
@@ -392,20 +446,42 @@ export class Score {
     this.boost *= Math.exp(-dt * 0.25);
     const I = Math.min(1, st.intensity + this.boost + Math.min(av, 12) * 0.012);
 
-    // the score
-    const bendC = Math.max(-500, Math.min(500, v * 16));
-    this.tape = Math.pow(2, bendC / 1200);
-    this.tempo = 1 + Math.min(av, 10) * 0.06;
-    if (this.running && !st.freeze) {
-      if (st.mood !== this.mood) {
-        const forward = st.mood > this.mood, first = this.mood < 0;
-        this.mood = st.mood; this.ci = 0; this.step = 99;
-        if (!first) this.nextNote = Math.min(this.nextNote || now, now + 0.15);
-        if (forward && !first) setTimeout(() => this.hit(0.6), 250);
+    // the recorded score: one piece per section, crossfading; tape speed follows the scroll
+    if (this.running && this.cues) {
+      const want = CUE_OF[st.mood] || 'pianoA';
+      if (want !== this.cue) {
+        const forward = st.mood > this.mood;
+        if (this.mood >= 0 && forward && Math.abs(st.mood - this.mood) === 1) setTimeout(() => this.hit(0.55), 200);
+        this.cue = want; this.mood = st.mood;
+        const c = this.cues[want];
+        if (want === 'finale' && forward) c.el.currentTime = 0;
+        if (c.el.paused && !this.muted) c.el.play().catch(() => {});
+      } else this.mood = st.mood;
+      const rev = v < -0.6;
+      let rate = rev ? 0.72 : 1 + Math.max(-0.2, Math.min(0.5, v * 0.025));
+      if (st.freeze) rate = 0.9;
+      for (const [k, c] of Object.entries(this.cues)) {
+        const target = k === this.cue ? CUE_GAIN[k] * (rev ? 0.45 : 1) * (st.freeze ? 0.5 : 1) : 0;
+        c.g.gain.setTargetAtTime(target, now, k === this.cue ? 1.2 : 0.9);
+        if (k === this.cue) {
+          if (Math.abs(c.el.playbackRate - rate) > 0.02) c.el.playbackRate = c.el.playbackRate + (rate - c.el.playbackRate) * 0.5;
+          c.quietSince = 0;
+          if (c.el.paused && !this.muted) c.el.play().catch(() => {});
+        } else if (!c.el.paused) {
+          c.quietSince = c.quietSince || now;
+          if (now - c.quietSince > 4) c.el.pause();
+        }
       }
-      if (!this.nextNote || this.nextNote < now - 1) this.nextNote = now + 0.05;
-      this.schedule(now, I, st);
-    } else if (st.freeze) this.nextNote = now + 0.4;
+      // the music's own pulse drives the picture: bass and treble onsets
+      this.an.getByteFrequencyData(this.fbuf);
+      let lo = 0, hi = 0;
+      for (let i = 1; i < 12; i++) lo += this.fbuf[i];
+      for (let i = 60; i < 200; i++) hi += this.fbuf[i];
+      lo /= 11 * 255; hi /= 140 * 255;
+      if (lo > this.avgB * 1.18 + 0.03) this.visualEvents.push({ at: now, gain: Math.min(0.6, (lo - this.avgB) * 2.2), bass: true });
+      if (hi > this.avgT * 1.25 + 0.02) this.visualEvents.push({ at: now, gain: Math.min(0.5, (hi - this.avgT) * 3), bass: false });
+      this.avgB += (lo - this.avgB) * Math.min(1, dt * 2); this.avgT += (hi - this.avgT) * Math.min(1, dt * 2);
+    }
     this.mfilt.frequency.setTargetAtTime(st.freeze ? 1000 : 18000, now, st.freeze ? 0.3 : 0.08);
 
     const B = this.beds, set = (b, x, tc = 0.4) => b.g.gain.setTargetAtTime(x, now, tc);
@@ -417,13 +493,6 @@ export class Score {
     const dir = v < -0.6 ? -1 : v > 0.6 ? 1 : this.dir;
     if (dir !== this.dir) { if (dir < 0) this.play('swellR', { gain: 0.4, verb: 0.6 }); this.dir = dir; }
 
-    // rare sparkles, more when you fly
-    this.nextSparkle -= dt * (0.05 + av * 0.1) * st.bells;
-    if (this.nextSparkle <= 0 && this.cur && !st.freeze) {
-      this.nextSparkle = 1 + Math.random() * 2;
-      const iv = this.cur.iv, n = this.cur.root + 36 + iv[Math.floor(Math.random() * iv.length)];
-      this.play(rev ? 'bellR' : 'bell', { rate: mtof(n) / 523.25, gain: 0.1 + Math.random() * 0.06, pos: this.rndPos(3 + Math.random() * 3), verb: 1 });
-    }
     if (st.fire > 0.1 && Math.random() < st.fire * dt * 12) this.play('ratchet', { rate: 0.4 + Math.random() * 0.6, gain: 0.2 * st.fire, pos: this.rndPos(2), verb: 0.1 });
     if (st.blips > 0 && Math.random() < st.blips * dt * 3) this.play('blip', { rate: 0.6 + Math.random() * 0.6, gain: 0.18, pos: this.rndPos(3), verb: 0.4 });
     if (st.shutters > 0 && Math.random() < st.shutters * dt * 5) this.play('click', { rate: 0.8 + Math.random() * 0.5, gain: 0.3, pos: this.rndPos(2 + Math.random() * 6), verb: 0.25 });

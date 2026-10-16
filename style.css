@@ -75,7 +75,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* ---------------- scene overlays */
 #labels { position: fixed; inset: 0; pointer-events: none; }
-.sky { position: absolute; left: 0; top: 0; font-family: var(--mono); font-size: 11px; letter-spacing: .12em; color: var(--gold2); white-space: nowrap;
+.sky { position: absolute; left: 0; top: 0; font-family: var(--mono); font-size: 10px; letter-spacing: .12em; color: var(--gold2); white-space: nowrap;
   padding-left: 14px; opacity: 0; transition: opacity .4s; text-shadow: 0 0 8px #000; }
 .sky::before { content: ""; position: absolute; left: 0; top: 50%; width: 8px; height: 1px; background: var(--gold); }
 
@@ -86,7 +86,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   border: 1px solid rgba(244,232,207,.35); background: rgba(2,1,7,.55); color: var(--dim); white-space: nowrap; transition: color .3s, border-color .3s, box-shadow .3s; }
 #choice button.sel { color: var(--gold2); border-color: var(--gold); box-shadow: 0 0 22px rgba(216,178,106,.35); }
 
-#wave { position: fixed; left: 50%; top: 92px; transform: translateX(-50%); width: min(70vw, 420px); font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em;
+#wave { position: fixed; left: 50%; top: 22px; transform: translateX(-50%); width: min(40vw, 260px); font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em;
   color: var(--dim); opacity: 0; transition: opacity .8s; pointer-events: none; text-align: center; }
 #wave.on { opacity: 1; }
 #wave .bar { position: relative; height: 4px; background: linear-gradient(90deg, #6a5cff, #39b6ff, #6cff8a, #ffe45c, #ff7a3c, #b3261e 70%, #3a0a06); border-radius: 2px; }
@@ -139,6 +139,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   #credits img { height: 44vh; max-width: 80vw; }
   .ctext { max-width: 100%; }
   #choice button { font-size: 10.5px; padding: 7px 10px; }
+  #wave { top: 64px; width: 56vw; }
 }
 
 /* ---------------- the control deck */
@@ -246,7 +247,7 @@ body[data-who="L"] #shade::after { opacity: 1; }
   background: radial-gradient(closest-side, rgba(2,1,7,.84), rgba(2,1,7,.6) 55%, rgba(2,1,7,0)); }
 .ln.neil::before { background: radial-gradient(closest-side, rgba(10,6,2,.86), rgba(30,18,4,.55) 55%, rgba(2,1,7,0)); }
 .ln.lumen::before { background: radial-gradient(closest-side, rgba(2,5,12,.86), rgba(6,20,44,.55) 55%, rgba(2,1,7,0)); }
-.ttl::before { display: none; }
+.ttl::before { inset: -10% -14%; background: radial-gradient(closest-side, rgba(2,1,7,.78), rgba(2,1,7,.45) 60%, rgba(2,1,7,0)); }
 
 /* words fly in one by one */
 .ln.neil:not(.hero) .w, .ln.head .w { display: inline-block; opacity: 0; transform: translateY(.45em) scale(.96); filter: blur(5px);
@@ -278,3 +279,17 @@ body[data-who="L"] #shade::after { opacity: 1; }
   .orb .name { top: 62px; font-size: 9px; }
   .ln::before { inset: -20px -24px; }
 }
+
+/* section openings: the numeral rushes in at light speed, light sweeps it, a line of light opens */
+.ttl .num { display: block; width: fit-content; margin: 0 auto; background-size: 100% 100%; }
+.ttl.on .num { animation: numIn 1.5s cubic-bezier(.15,.85,.2,1) both; }
+@keyframes numIn { 0% { transform: scale(3.2); opacity: 0; filter: blur(18px) drop-shadow(0 0 30px rgba(216,178,106,.35)); letter-spacing: .2em; }
+  60% { opacity: 1; } 100% { transform: none; opacity: 1; filter: drop-shadow(0 0 30px rgba(216,178,106,.35)); letter-spacing: 0; } }
+.ttl .name { position: relative; display: inline-block; padding-bottom: 14px; }
+.ttl .name::after { content: ""; position: absolute; left: 50%; bottom: 0; width: 120%; height: 1px; transform: translateX(-50%) scaleX(0);
+  background: linear-gradient(90deg, rgba(216,178,106,0), #f3dca6 50%, rgba(216,178,106,0)); box-shadow: 0 0 12px rgba(216,178,106,.8); }
+.ttl.on .name::after { animation: lineOpen 1.4s cubic-bezier(.2,.8,.2,1) .5s both; }
+@keyframes lineOpen { to { transform: translateX(-50%) scaleX(1); } }
+.ttl.on .name { animation: nameIn 1.2s cubic-bezier(.2,.8,.2,1) .35s both; }
+@keyframes nameIn { from { opacity: 0; letter-spacing: .35em; filter: blur(6px); } to { opacity: 1; letter-spacing: 0; filter: none; } }
+.ttl .num::before { content: ""; }

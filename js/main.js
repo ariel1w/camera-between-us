@@ -581,13 +581,13 @@ function frame(now) {
         fb(i, cB);
         if (cross) {
           // between sections every particle pours through one glowing aperture
-          const h = (i * 0.6180339) % 1, a = h * 6.2831853, u = 1 - w;
-          const tx = Math.cos(a) * 0.6, ty = 1.2 + Math.sin(a) * 0.6, tz = -6;
+          const h = (i * 0.6180339) % 1, a = h * 6.2831853, u = 1 - w, rr = 2.6 + ((i * 0.7548776) % 1) * 1.6;
+          const tx = Math.cos(a) * rr * 1.3, ty = 1.2 + Math.sin(a) * rr, tz = -7 - ((i * 0.5698403) % 1) * 6;
           x = u * u * x + 2 * u * w * tx + w * w * O[0];
           y = u * u * y + 2 * u * w * ty + w * w * O[1];
           z = u * u * z + 2 * u * w * tz + w * w * O[2];
           const flare = Math.pow(Math.sin(Math.PI * w), 6);
-          r += (O[3] - r) * w + flare * 0.25; g += (O[4] - g) * w + flare * 0.22; b += (O[5] - b) * w + flare * 0.35; s += (O[6] - s) * w + flare * 0.4;
+          r += (O[3] - r) * w + flare * 0.1; g += (O[4] - g) * w + flare * 0.09; b += (O[5] - b) * w + flare * 0.14; s += (O[6] - s) * w + flare * 0.15;
         } else {
           // particles arc through space as they travel between shapes
           const lift = Math.sin(w * Math.PI) * 1.4 * (((i * 0.7548776) % 1) - 0.5);
@@ -634,7 +634,8 @@ function frame(now) {
       expo += (Math.min(1, Math.max(0.14, area / 14)) - expo) * Math.min(1, dt * 2.5);
     }
   }
-  pMat.uniforms.uExp.value = (started ? 1 + pulse * 0.32 : 0.35 + intro * 0.5 + burst * 0.5) * expo * (bloom.enabled ? 1 : 1.6);
+  const crossDim = cross ? 1 - 0.55 * Math.sin(Math.PI * Math.min(1, Math.max(0, m))) : 1;
+  pMat.uniforms.uExp.value = (started ? 1 + pulse * 0.32 : 0.35 + intro * 0.5 + burst * 0.5) * expo * crossDim * (bloom.enabled ? 1 : 1.6);
 
   // warp streaks
   const wOp = started ? Math.min(0.9, 0.16 + Math.max(0, av - 2.5) / 10 + warpKick * 0.8) : 0;
@@ -739,9 +740,13 @@ function frame(now) {
   skyLabels.forEach((el, n) => {
     if (sep < 0.35) { el.style.opacity = 0; return; }
     skyAnchor(cB, SKY_LABELS[n].k, sep, tmpV); tmpV.project(camera);
-    const vis = tmpV.z < 1 && Math.abs(tmpV.x) < 1.1 && Math.abs(tmpV.y) < 1.1;
-    el.style.opacity = vis ? Math.min(1, (sep - 0.35) * 3) : 0;
-    el.style.transform = `translate(${(tmpV.x * 0.5 + 0.5) * innerWidth}px, ${(-tmpV.y * 0.5 + 0.5) * innerHeight}px)`;
+    const lx = (tmpV.x * 0.5 + 0.5) * innerWidth, ly = (-tmpV.y * 0.5 + 0.5) * innerHeight;
+    // labels never sit on the words, the presences or the deck
+    let clear = ly > 70 && ly < innerHeight - deckH() - 20 && lx > 140 && lx < innerWidth - 300;
+    for (const j of shown) { const sp = els[j]._spot; if (!sp) continue; const h = els[j].offsetHeight; if (ly > sp.y - h / 2 - 24 && ly < sp.y + h / 2 + 24 && lx > sp.left - 280 && lx < sp.left + sp.colW + 20) clear = false; }
+    const vis = clear && tmpV.z < 1 && Math.abs(tmpV.x) < 1.1 && Math.abs(tmpV.y) < 1.1;
+    el.style.opacity = vis ? Math.min(0.85, (sep - 0.35) * 3) : 0;
+    el.style.transform = `translate(${lx}px, ${ly}px)`;
   });
   // umbrella choice
   const showChoice = si === 9 && q.with >= 0.6 && q.ret < 0;

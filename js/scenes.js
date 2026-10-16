@@ -151,7 +151,7 @@ SCENES.push({
         O[1] += Math.cos(lane*1.7)*flight*2;
         O[2] -= flight*(25+R3[i]*45);
         const glint=Math.pow(Math.max(0,Math.cos(O[0]*0.7-c.f*1.8)),20)*(0.3+(c.treble||0));
-        O[3]+=glint; O[4]+=glint; O[5]+=glint;
+        O[3]+=glint*0.28; O[4]+=glint*0.55; O[5]+=glint*0.8;
         O[6]+=flight*0.4+glint*0.5;
       } else {
         const lane=i%180, tail=Math.floor(i/180)%12;
@@ -172,7 +172,7 @@ SCENES.push({
         const fade=sst(0,0.08,p)*(1-sst(0.94,1,p))*Math.exp(-tail*0.14);
         const flash=Math.exp(-z*z*2)*(0.5+(c.treble||0));
         set(Math.cos(a)*radius,1.2+Math.sin(a)*radius,z,
-          (0.7+flash)*fade,(0.9+flash)*fade,(1.25+flash)*fade,(tail===0?1.5:0.75)*fade);
+          (0.48+flash*0.2)*fade,(0.76+flash*0.4)*fade,(1.12+flash*0.6)*fade,(tail===0?1.5:0.75)*fade);
       }
     },
     // 3 two voices
@@ -469,7 +469,7 @@ export const SKY_LABELS = [
 ];
 function skyDistance(k, sep) {
   const shell=Math.min(4,Math.floor(k*5));
-  const distances=[8,21,39,65,100];
+  const distances=[16,29,46,70,105];
   return mix(34,distances[shell]+(fract(k*5)-0.5)*1.5,sep);
 }
 function skyPoint(i, c, sep) {
@@ -481,18 +481,22 @@ function skyPoint(i, c, sep) {
   const tq = R4[i];
   if (tq < 0.2) { O[3] = 0.6; O[4] = 0.75; O[5] = 1; } else if (tq < 0.6) { O[3] = 0.95; O[4] = 0.95; O[5] = 1; }
   else if (tq < 0.85) { O[3] = 1; O[4] = 0.85; O[5] = 0.6; } else { O[3] = 1; O[4] = 0.55; O[5] = 0.4; }
-  const mag = Math.pow(R2[i] * 0.999 + 0.001, 6);
+  // Magnitude must be independent of latitude: R2 also places stars vertically.
+  // The old correlation concentrated every giant bright sprite at the top.
+  const mag = Math.pow(fract(i * 0.754877666 + R4[i] * 0.23), 18);
   const tw = 0.75 + 0.25 * Math.sin(c.t * (2 + R1[i] * 5) + i);
-  O[6] = (0.5 + mag * 6) * tw * (1 + sep * 0.6);
+  const nearShell = mix(1, 0.7 + Math.min(1, dist / 70) * 0.3, sep);
+  O[6] = (0.38 + mag * 1.05) * tw * nearShell;
   const shell=Math.min(4,Math.floor(R3[i]*5));
-  const packet=Math.pow(Math.max(0,Math.cos(dist*0.17-c.f*2.2)),28)*sep;
+  const packet=Math.pow(Math.max(0,Math.cos(dist*0.17-c.f*2.2+R1[i]*2)),28)*sep;
   const gather=c.q.gathers>=0 ? Math.exp(-Math.pow((c.q.gathers-0.65)/0.4,2)) : 0;
-  const lum = 0.35 + mag * 2 + packet*(0.3+(c.treble||0)) + gather*0.85;
+  const lum = (0.24 + mag * 0.48 + packet*(0.09+(c.treble||0)*0.15) + gather*0.16) * nearShell;
   O[3]=mix(O[3],0.95-shell*0.13,sep*0.55);
   O[4]=mix(O[4],0.76-shell*0.06,sep*0.55);
   O[5]=mix(O[5],0.4+shell*0.18,sep*0.55);
-  O[6]+=packet*0.7+gather*0.8;
-  O[3] *= lum; O[4] *= lum; O[5] *= lum;
+  O[6]=Math.min(1.5,O[6]+packet*0.12+gather*0.1);
+  const exposure=Math.min(lum,0.85/Math.max(O[3],O[4],O[5],0.001));
+  O[3] *= exposure; O[4] *= exposure; O[5] *= exposure;
 }
 SCENES.push({
   cues: { travel: 'Light requires time to travel.', gathers: 'The observer gathers these different pasts' },
@@ -829,7 +833,7 @@ function trails(i, c, meet) {
   const y=1+Math.sin(angle)*radius*1.5;
   const z=1-lag;
   const fade=Math.pow(1-lag/13,0.65), glint=Math.pow(Math.max(0,Math.cos(lag*2-c.f*2)),20)*(c.treble||0);
-  set(x+G1[i]*0.035,y+G2[i]*0.035,z,(blue?0.25:1.1)*fade+glint,(blue?0.72:0.72)*fade+glint,(blue?1.2:0.26)*fade+glint,0.5+fade*0.6+glint*0.4);
+  set(x+G1[i]*0.035,y+G2[i]*0.035,z,(blue?0.25:1.1)*(fade+glint*0.4),(blue?0.72:0.72)*(fade+glint*0.4),(blue?1.2:0.26)*(fade+glint*0.4),0.5+fade*0.6+glint*0.4);
 }
 function carousel(i, c) {
   const K = 7, slot = i % K, j = Math.floor(i / K);
@@ -914,8 +918,8 @@ function between(i, c, mode, stream) {
     const lum=(0.5+packet*(0.8+(c.treble||0)))*Math.exp(-tail*0.13);
     const through=Math.exp(-x*x*3)*(0.3+(c.treble||0));
     set(x,1.3+Math.sin(a)*radius,Math.cos(a)*radius,
-      (dir>0?1.15:0.32)*lum+through,(dir>0?0.76:0.8)*lum+through,(dir>0?0.32:1.25)*lum+through,
-      (0.65+packet*0.6+through)*Math.exp(-tail*0.08));
+      (dir>0?1.15:0.32)*(lum+through*0.35),(dir>0?0.76:0.8)*(lum+through*0.35),(dir>0?0.32:1.25)*(lum+through*0.35),
+      (0.55+packet*0.35+through*0.2)*Math.exp(-tail*0.14));
     return;
   }
   const left = R2[i] < 0.5;
@@ -989,7 +993,7 @@ function finaleGalaxy(i,c,scale,depth) {
   if(tag===1) { O[3]=1.45; O[4]=0.98; O[5]=0.43; O[6]*=1.15; }
   else {
     const gold=Math.exp(-radius*0.65);
-    O[3]=0.48+gold*0.75+sparkle; O[4]=0.25+gold*0.48+sparkle*0.8; O[5]=1.05-gold*0.6+sparkle;
+    O[3]=0.48+gold*0.75+sparkle*0.45; O[4]=0.25+gold*0.48+sparkle*0.2; O[5]=1.05-gold*0.6+sparkle*0.7;
   }
   const pressure=1+(c.bass||0)*wave*0.022;
   O[0]*=pressure; O[1]=1.1+(O[1]-1.1)*pressure;
@@ -1020,7 +1024,7 @@ SCENES.push({
       const warm=lane%3===0, glint=(c.treble||0)*Math.pow(Math.max(0,Math.cos(a*7-c.f*2)),20);
       const pressure=1+(c.bass||0)*0.035;
       set(Math.cos(turn)*radius*pressure*c.sx,1.2+Math.sin(turn)*radius*pressure,z,
-        ((warm?1.2:0.45)+glint)*fade,((warm?0.8:0.75)+glint)*fade,((warm?0.4:1.25)+glint)*fade,
+        (warm?1.2:0.45)*(1+glint*0.4)*fade,(warm?0.8:0.75)*(1+glint*0.4)*fade,(warm?0.4:1.25)*(1+glint*0.4)*fade,
         (tail===0?1.4:0.75)*fade);
     },
     (i,c) => {

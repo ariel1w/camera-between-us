@@ -609,7 +609,7 @@ function frame(now) {
     for (let k2 = 0; k2 < TR; k2++) {
       const sl = Math.floor(k2 * N / TR), j = sl * 3, o = k2 * 6;
       const dx = POS[j] - PREV[k2 * 3], dy = POS[j + 1] - PREV[k2 * 3 + 1], dz = POS[j + 2] - PREV[k2 * 3 + 2];
-      const d = Math.hypot(dx, dy, dz), ok = SIZ[sl] > 0.001 && d > 0.02 && d < 2.5;
+      const d = Math.hypot(dx, dy, dz), ok = sl < drawN && SIZ[sl] > 0.001 && d > 0.02 && d < 2.5;
       trPos[o] = POS[j]; trPos[o + 1] = POS[j + 1]; trPos[o + 2] = POS[j + 2];
       trPos[o + 3] = POS[j] - (ok ? dx * stretch : 0); trPos[o + 4] = POS[j + 1] - (ok ? dy * stretch : 0); trPos[o + 5] = POS[j + 2] - (ok ? dz * stretch : 0);
       const k = ok ? Math.min(1, d * 6) * 0.6 * pMat.uniforms.uExp.value : 0; if (ok) any++;
@@ -812,6 +812,7 @@ function frame(now) {
     glitch: si === 7 && q.gen >= 0 && q.all < 0 ? 1 : 0,
     shutters: si === 10 && q.every >= 0 && q.truth < 0 ? (q.billions >= 0 ? 3 : 1) : 0,
     walk: si === 9 && q.ret < 0 && lp > 0 ? 1 : 0,
+    credits: slot.kind === 'credits',
   });
 }
 
@@ -859,7 +860,13 @@ function placeLine(j) {
   el.style.left = left + 'px'; el.style.width = colW + 'px'; el.style.textAlign = align;
   el.style.transformOrigin = align === 'left' ? '0% 50%' : align === 'right' ? '100% 50%' : '50% 50%';
   el.style.display = 'block'; el.style.opacity = '0';
-  const h = el.offsetHeight;
+  const tx = el.querySelector('.tx'); if (tx) tx.style.fontSize = '';
+  let h = el.offsetHeight;
+  const room = H - deckH() - 18 - 78;
+  if (tx && h > room) {
+    let fs = parseFloat(getComputedStyle(tx).fontSize);
+    for (let k = 0; k < 8 && h > room && fs > 15; k++) { fs *= 0.88; tx.style.setProperty('font-size', fs + 'px', 'important'); h = el.offsetHeight; }
+  }
   const top = 78, bottom = H - deckH() - 18;
   let best = (top + bottom) / 2;
   if (s.kind !== 'title') {
@@ -968,6 +975,7 @@ $('#begin').disabled = false;
 $('#begin').textContent = MOBILE ? 'Tap to begin' : 'Click to begin';
 if (MOBILE) $('#hint div:last-child').innerHTML = 'Swipe up to fly. Swipe down to rewind time.<br>Or press Play and let it fly.';
 $('#begin').onclick = async () => {
+  if ($('#begin').dataset.used) return; $('#begin').dataset.used = '1'; $('#begin').disabled = true;
   $('#gate').classList.add('gone');
   introT = 0;
   score.init().then(() => { if (introT < 2.2) score.windup(2.6 - introT); }).catch(e => console.warn('audio unavailable', e));
@@ -976,7 +984,9 @@ $('#snd').onclick = () => { score.setMuted(!score.muted); $('#snd').classList.to
 $('#rewind').onclick = () => { setAuto(false); flyTo(0); };
 $('#play').onclick = () => setAuto(!auto);
 // if a browser held the sound back, any later click or key unlocks it
-['pointerdown', 'keydown', 'touchend'].forEach(ev => addEventListener(ev, () => { if (score.ctx && score.ctx.state === 'suspended') score.ctx.resume(); }, { passive: true }));
+['pointerdown', 'keydown', 'touchend'].forEach(ev => addEventListener(ev, () => score.unlock(), { passive: true }));
+// leaving the tab pauses music and flight together
+document.addEventListener('visibilitychange', () => { const hidden = document.visibilityState === 'hidden'; score.sleep(hidden); if (!hidden) last = performance.now(); });
 $('#back').onclick = () => step(-1);
 $('#fwd').onclick = () => step(1);
 setSpeed(speedIdx);

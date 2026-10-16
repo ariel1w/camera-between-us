@@ -94,7 +94,9 @@ export class Score {
     this.tape = 1; this.tempo = 1; this.nextNote = 0; this.step = 99; this.stepsInChord = 8; this.pattern = [0];
   }
 
-  async init() {
+  init() { return this._init || (this._init = this._doInit()); }
+
+  async _doInit() {
     const ctx = this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     if (ctx.state === 'suspended') ctx.resume();
 
@@ -143,7 +145,7 @@ export class Score {
       src.connect(g); g.connect(this.music);
       this.cues[k] = { el, g, on: false, quietSince: 0 };
       // unlock each player inside the click (phones need this)
-      el.muted = true; el.play().then(() => { el.pause(); el.muted = false; }).catch(() => { el.muted = false; });
+      el.muted = true; el.play().then(() => { el.muted = false; if (this.cue !== k || !this.running || this.muted) el.pause(); }).catch(() => { el.muted = false; });
     }
     this.cue = null;
     fetch('audio/hits.mp3?v=11').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this.buf.hits = buf; this.buf.hitsR = reversed(ctx, buf); }).catch(() => {});
@@ -372,6 +374,31 @@ export class Score {
     for (let k = 0; k < 8; k++) this.visualEvents.push({ at: at + 8 + k * 0.9, gain: 0.5, bass: true });
   }
 
+  tryPlay(c) {
+    if (!c || c.pending || this.muted || c.el.ended) return;
+    const now = this.ctx ? this.ctx.currentTime : 0;
+    if (c.blocked || now < (c.retryAt || 0)) return;
+    c.pending = true;
+    c.el.play().then(() => { c.pending = false; c.blocked = false; })
+      .catch(e => { c.pending = false; if (e && e.name === 'NotAllowedError') c.blocked = true; else c.retryAt = (this.ctx ? this.ctx.currentTime : 0) + 3; });
+  }
+
+  // called inside any tap or key: phones only allow playback from a gesture
+  unlock() {
+    if (!this.ctx) return;
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+    const c = this.cues && this.cues[this.cue];
+    if (c && c.el.paused && !c.el.ended && !this.muted) { c.blocked = false; c.pending = true; c.el.play().then(() => { c.pending = false; }).catch(() => { c.pending = false; c.blocked = true; }); }
+  }
+
+  // leaving the tab: everything stops together; coming back: everything resumes together
+  sleep(hidden) {
+    if (!this.ctx) return;
+    const c = this.cues && this.cues[this.cue];
+    if (hidden) { this.wasPlaying = c && !c.el.paused; if (c) c.el.pause(); this.ctx.suspend(); }
+    else { this.ctx.resume(); if (c && this.wasPlaying) this.tryPlay(c); }
+  }
+
   // music steps back for a moment
   duck(level, secs) {
     const now = this.ctx.currentTime;
@@ -454,19 +481,19 @@ export class Score {
         if (this.mood >= 0 && forward && Math.abs(st.mood - this.mood) === 1) setTimeout(() => this.hit(0.55), 200);
         this.cue = want; this.mood = st.mood;
         const c = this.cues[want];
-        if (want === 'finale' && forward) c.el.currentTime = 0;
-        if (c.el.paused && !this.muted) c.el.play().catch(() => {});
+        if (want === 'finale' && (forward || c.el.ended)) c.el.currentTime = 0;
+        if (c.el.paused) this.tryPlay(c);
       } else this.mood = st.mood;
       const rev = v < -0.6;
       let rate = rev ? 0.72 : 1 + Math.max(-0.2, Math.min(0.5, v * 0.025));
       if (st.freeze) rate = 0.9;
       for (const [k, c] of Object.entries(this.cues)) {
-        const target = k === this.cue ? CUE_GAIN[k] * (rev ? 0.45 : 1) * (st.freeze ? 0.5 : 1) : 0;
+        const target = k === this.cue ? CUE_GAIN[k] * (rev ? 0.45 : 1) * (st.freeze ? 0.5 : 1) * (st.credits && k === 'finale' ? 0.55 : 1) : 0;
         c.g.gain.setTargetAtTime(target, now, k === this.cue ? 1.2 : 0.9);
         if (k === this.cue) {
           if (Math.abs(c.el.playbackRate - rate) > 0.02) c.el.playbackRate = c.el.playbackRate + (rate - c.el.playbackRate) * 0.5;
           c.quietSince = 0;
-          if (c.el.paused && !this.muted) c.el.play().catch(() => {});
+          if (c.el.paused) this.tryPlay(c);
         } else if (!c.el.paused) {
           c.quietSince = c.quietSince || now;
           if (now - c.quietSince > 4) c.el.pause();

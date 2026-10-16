@@ -73,7 +73,7 @@
     <div class="cs">A Conversation Between Neil and Lumen About Time, Matter, Intelligence and the Universe</div>
     <div class="cb">Conceived and written by Neil Weisbrod<br>Co-Edited by Neil Weisbrod and Lumen<br>© October 13, 2026</div>
     <button id="rewind">⟲ Rewind time</button>
-    <div class="cm">Flight, light and sound built with Claude Code</div>
+    <div class="cm">Flight and light built with Claude Code and Codex · Music generated with Gemini</div>
   </div>
 </div>
 
@@ -89,5 +89,15 @@
 
 <div id="track"></div>
 <script type="module" src="js/main.js?v=11"></script>
+<script>
+  // if the 3D view cannot start (old browser, no WebGL, blocked network), say so instead of waiting forever
+  setTimeout(function () {
+    var b = document.getElementById('begin');
+    if (b && b.disabled && !b.dataset.used) {
+      b.textContent = 'This needs a recent browser with 3D graphics. Please open it in Chrome on a computer.';
+      b.style.fontSize = '16px'; b.style.maxWidth = '420px'; b.style.lineHeight = '1.4';
+    }
+  }, 15000);
+</script>
 </body>
 </html>

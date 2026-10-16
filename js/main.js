@@ -964,6 +964,7 @@ document.documentElement.classList.add('locked');
 window.scrollTo(0, 0);
 $('#begin').disabled = false;
 $('#begin').textContent = MOBILE ? 'Tap to begin' : 'Click to begin';
+if (MOBILE) $('#hint div:last-child').innerHTML = 'Swipe up to fly. Swipe down to rewind time.<br>Or press Play and let it fly.';
 $('#begin').onclick = async () => {
   $('#gate').classList.add('gone');
   introT = 0;

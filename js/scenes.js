@@ -473,31 +473,40 @@ function skyDistance(k, sep) {
   return mix(34,distances[shell]+(fract(k*5)-0.5)*1.5,sep);
 }
 function skyPoint(i, c, sep) {
-  const a = (R1[i] - 0.5) * 2.4, b = (R2[i] - 0.5) * 1.3 + Math.sin(a * 1.4) * 0.25 * (R4[i] < 0.4 ? 1 : 0);
+  // A broad diagonal Milky Way, interleaved with the full surrounding sky.
+  // Role, magnitude, latitude and colour use independent samples.
+  const band = i % 5 < 3;
+  const a = (R1[i] - 0.5) * 2.4;
+  const ridge = a * 0.28 + Math.sin(a * 2.6) * 0.09;
+  const b = band ? ridge + G1[i] * (0.075 + R2[i] * 0.055) : (R2[i] - 0.5) * 1.5;
   const dist = skyDistance(R3[i],sep);
   const x = Math.sin(a) * dist, y = Math.sin(b) * dist + 1, z = -Math.cos(a) * dist * Math.cos(b) + 10;
-  set(x, y, z, 0, 0, 0, 0);
-  if (sep > 0) { O[2] -= 10; rotY(sep * 1.05); O[2] += 10 - sep * 6; O[0] += sep * 4; }
-  const tq = R4[i];
-  if (tq < 0.2) { O[3] = 0.6; O[4] = 0.75; O[5] = 1; } else if (tq < 0.6) { O[3] = 0.95; O[4] = 0.95; O[5] = 1; }
-  else if (tq < 0.85) { O[3] = 1; O[4] = 0.85; O[5] = 0.6; } else { O[3] = 1; O[4] = 0.55; O[5] = 0.4; }
-  // Magnitude must be independent of latitude: R2 also places stars vertically.
-  // The old correlation concentrated every giant bright sprite at the top.
-  const mag = Math.pow(fract(i * 0.754877666 + R4[i] * 0.23), 18);
-  const tw = 0.75 + 0.25 * Math.sin(c.t * (2 + R1[i] * 5) + i);
-  const nearShell = mix(1, 0.7 + Math.min(1, dist / 70) * 0.3, sep);
-  O[6] = (0.38 + mag * 1.05) * tw * nearShell;
+  set(x,y,z,0,0,0,0);
+  if(sep>0) { O[2]-=10; rotY(sep*1.05); O[2]+=10-sep*6; O[0]+=sep*4; }
+  const tq=R4[i];
+  if(tq<0.3) { O[3]=0.47; O[4]=0.7; O[5]=1; }
+  else if(tq<0.58) { O[3]=0.88; O[4]=0.92; O[5]=1; }
+  else if(tq<0.85) { O[3]=1; O[4]=0.71; O[5]=0.3; }
+  else { O[3]=1; O[4]=0.34; O[5]=0.19; }
+  const mag=Math.pow(fract(i*0.754877666+R4[i]*0.23),10);
+  const tw=0.88+0.12*Math.sin(c.t*(1+R1[i]*4)+i);
   const shell=Math.min(4,Math.floor(R3[i]*5));
   const packet=Math.pow(Math.max(0,Math.cos(dist*0.17-c.f*2.2+R1[i]*2)),28)*sep;
-  const gather=c.q.gathers>=0 ? Math.exp(-Math.pow((c.q.gathers-0.65)/0.4,2)) : 0;
-  const lum = (0.24 + mag * 0.48 + packet*(0.09+(c.treble||0)*0.15) + gather*0.16) * nearShell;
-  O[3]=mix(O[3],0.95-shell*0.13,sep*0.55);
-  O[4]=mix(O[4],0.76-shell*0.06,sep*0.55);
-  O[5]=mix(O[5],0.4+shell*0.18,sep*0.55);
-  O[6]=Math.min(1.5,O[6]+packet*0.12+gather*0.1);
-  const exposure=Math.min(lum,0.85/Math.max(O[3],O[4],O[5],0.001));
-  O[3] *= exposure; O[4] *= exposure; O[5] *= exposure;
+  const gather=c.q.gathers>=0?Math.exp(-Math.pow((c.q.gathers-0.65)/0.4,2)):0;
+  // Restore a visible floor. Distant shells get larger physical sprites to
+  // compensate perspective; near stars retain a strict individual size cap.
+  const perspective=mix(1,Math.min(2.4,Math.max(0.8,dist/34)),sep);
+  const size=(0.85+mag*0.62)*tw+packet*0.08+gather*0.06;
+  O[6]=Math.min(1.5*perspective,size*perspective);
+  const lum=(band?0.69:0.8)*tw+mag*0.18+packet*(0.08+(c.treble||0)*0.1)+gather*0.08;
+  // Subtle shell tint keeps spectral star colours recognisable.
+  O[3]=mix(O[3],0.94-shell*0.12,sep*0.18);
+  O[4]=mix(O[4],0.72-shell*0.05,sep*0.18);
+  O[5]=mix(O[5],0.36+shell*0.15,sep*0.18);
+  const exposure=Math.min(lum,0.98/Math.max(O[3],O[4],O[5],0.001));
+  O[3]*=exposure; O[4]*=exposure; O[5]*=exposure;
 }
+
 SCENES.push({
   cues: { travel: 'Light requires time to travel.', gathers: 'The observer gathers these different pasts' },
   seq: [[null, 0], ['travel', 1], ['gathers', 0]],

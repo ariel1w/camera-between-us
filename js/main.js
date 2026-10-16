@@ -3,10 +3,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SECTIONS } from './content.js?v=19';
-import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=19';
-import { Score } from './audio.js?v=19';
-import { Presence } from './presences.js?v=19';
+import { SECTIONS } from './content.js?v=20';
+import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=20';
+import { Score } from './audio.js?v=20';
+import { Presence } from './presences.js?v=20';
 
 const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 600;
@@ -171,7 +171,7 @@ const SKY_LEVEL = [0.55, 0.5, 0.55, 0.55, 0.5, 0.75, 0.65, 0.5, 0.45, 0.5, 0.55,
 const skyLoader = new THREE.TextureLoader();
 const skies = SKY_FILES.map((name, k) => {
   const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-  skyLoader.load('img/bg-' + name + '.jpg?v=19', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
+  skyLoader.load('img/bg-' + name + '.jpg?v=20', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(680, 383), mat);
   mesh.position.z = -175; mesh.renderOrder = -10; mesh.visible = false; mesh.frustumCulled = false;
   scene.add(mesh);
@@ -399,6 +399,7 @@ addEventListener('keydown', e => {
   if (e.code === 'ArrowLeft') { e.preventDefault(); step(-1); return; }
   if (e.key === '+' || e.key === '=') { setSpeed(speedIdx + 1); return; }
   if (e.key === '-' || e.key === '_') { setSpeed(speedIdx - 1); return; }
+  if (e.key === 'f' || e.key === 'F') return;
   if (flying) flying = null; if (auto) setAuto(false); $('#hint').classList.add('gone');
 });
 function setAuto(on) {
@@ -544,7 +545,7 @@ function frame(now) {
     intro = Math.min(1, introT / 2.6);
     if (introT >= 2.6 && apertureOpen === 0 && (score.ready || introT > 4.5)) { score.boom(); flash = 1; apertureOpen = 0.0001; burst = 1; }
     if (apertureOpen > 0 && apertureOpen < 1) apertureOpen = Math.min(1, apertureOpen + Math.min(0.5, realDt) * 2.6);
-    if (introT > 3.4 && !started) { started = true; document.documentElement.classList.remove('locked'); $('#hint').classList.remove('gone'); $('#hud').classList.add('on'); $('#deck').classList.add('on'); lastMove = performance.now(); }
+    if (introT > 3.4 && !started) { started = true; document.documentElement.classList.remove('locked'); $('#hint').classList.remove('gone'); $('#hud').classList.add('on'); $('#deck').classList.add('on'); lastMove = performance.now(); if (presenting) setTimeout(() => setAuto(true), 1500); }
   }
   burst *= Math.exp(-dt * 1.2);
   const openNow = started ? Math.min(1 - shut, 1) : (apertureOpen > 0 ? 1 - Math.pow(1 - apertureOpen, 3) : 0);
@@ -980,7 +981,6 @@ $('#begin').textContent = 'My headphones are on';
 // the gate: on a phone or tablet, ask for a computer first; then ask for headphones
 // (browsers cannot detect headphones without microphone permission, so we ask)
 const gateStep = id => { document.querySelectorAll('.g-step').forEach(e => e.classList.toggle('on', e.id === id)); };
-if (MOBILE || /iPad|iPhone|Android|Mobile/i.test(navigator.userAgent)) gateStep('g-device');
 document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => gateStep(b.dataset.go));
 document.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => {
   const url = location.href.split('?')[0].split('#')[0];
@@ -988,6 +988,16 @@ document.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => {
   catch (e) { b.textContent = url; }
 });
 $('#begin-anyway').onclick = () => $('#begin').onclick();
+// presentation mode: full screen, then it plays by itself
+const canFS = !!document.documentElement.requestFullscreen;
+const toggleFS = () => { if (!canFS) return; if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); };
+let presenting = false;
+if (!canFS || MOBILE) { $('#present').remove(); $('#fs').remove(); }
+else {
+  $('#present').onclick = () => { presenting = true; document.documentElement.requestFullscreen().catch(() => {}); $('#begin').onclick(); };
+  $('#fs').onclick = toggleFS;
+  addEventListener('keydown', e => { if (e.key === 'f' || e.key === 'F') toggleFS(); });
+}
 if (MOBILE) document.querySelectorAll('.g-how [data-m]').forEach(e => e.textContent = e.dataset.m);
 if (MOBILE) document.querySelector('.g-how .keys').innerHTML = '<kbd>&lsaquo;</kbd><kbd>&rsaquo;</kbd>';
 if (MOBILE) $('#hint div:last-child').innerHTML = 'Swipe up to fly. Swipe down to rewind time.<br>Or press Play and let it fly.';

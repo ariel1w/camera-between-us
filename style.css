@@ -222,6 +222,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 #deck #speeds button { font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em; padding: 7px 8px; color: var(--dim); transition: color .2s, background .2s; }
 #deck #speeds button:hover { color: var(--ivory); }
 #deck #speeds button.on { color: #1a1206; background: linear-gradient(180deg, var(--gold2), var(--gold)); }
+.trio { margin-top: 18px; font-family: var(--serif); font-style: italic; font-size: 22px; letter-spacing: .12em; color: var(--ivory); opacity: .85; }
+#deck #fs { padding: 6px; color: var(--dim); margin-left: 10px; transition: color .2s; }
+#deck #fs:hover { color: var(--ivory); }
 #snd { display: flex; gap: 3px; align-items: flex-end; height: 22px; padding: 2px 4px; }
 #snd .b { width: 3px; background: var(--gold); animation: eq 1s ease-in-out infinite; }
 #snd .b:nth-child(2) { animation-delay: -.3s; } #snd .b:nth-child(3) { animation-delay: -.6s; } #snd .b:nth-child(4) { animation-delay: -.8s; }

@@ -231,7 +231,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 @keyframes eq { 0%,100% { height: 4px; } 50% { height: 18px; } }
 #snd.off .b { animation: none; height: 3px; opacity: .5; }
 
-@media (max-width: 1100px) { #speeds button:nth-child(2):not(.on), #speeds button:nth-child(4):not(.on) { display: none; } }
+@media (min-width: 701px) and (max-width: 1100px) { html:not(.touch) #speeds button:nth-child(2):not(.on), #speeds button:nth-child(4):not(.on) { display: none; } }
 @media (max-width: 900px) { #deck-sec { display: none; } }
 @media (max-width: 700px) {
   :root { --deckH: 128px; }
@@ -242,8 +242,28 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   #deck .mid { gap: 12px; }
   #time { display: none; }
   #deck #speeds button { padding: 6px; }
-  #speeds button:nth-child(1):not(.on), #speeds button:nth-child(6):not(.on) { display: none; }
+  html:not(.touch) #speeds button:nth-child(1):not(.on), html:not(.touch) #speeds button:nth-child(6):not(.on) { display: none; }
 }
+
+/* phones: a word under each button, all speeds on their own row, a short message on each tap */
+html.touch { --deckH: 186px; }
+html.touch #deck { width: calc(100vw - 24px); bottom: 12px; padding: 8px 14px 12px; border-radius: 16px; }
+html.touch #deck .row { grid-template-columns: 1fr auto 1fr; gap: 8px; padding-bottom: 18px; }
+html.touch #deck .mid { gap: 22px; }
+html.touch #deck .round, html.touch #deck .big { position: relative; }
+html.touch #deck .round::after, html.touch #deck .big::after { content: attr(data-l); position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 5px;
+  font: 9.5px var(--mono); letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; color: var(--dim); }
+html.touch #deck .big::after { color: var(--gold2); }
+html.touch #deck.on.idle { opacity: .3; }
+html.touch #time, html.touch #deck-sec { display: none; }
+#deck .spdrow { display: flex; align-items: center; gap: 12px; margin-top: 4px; padding-top: 10px; border-top: 1px solid rgba(244,232,207,.1); }
+#deck .spdrow .lbl { font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+#deck .spdrow #speeds { flex: 1; }
+#deck .spdrow #speeds button { flex: 1; padding: 9px 0; font-size: 12px; }
+#toast { position: fixed; left: 50%; bottom: calc(var(--deckH) + 14px); transform: translate(-50%, 6px); z-index: 6; pointer-events: none; opacity: 0; transition: opacity .3s, transform .3s;
+  font: 11px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--gold2); padding: 7px 14px; border-radius: 20px;
+  background: rgba(8,6,18,.8); border: 1px solid rgba(216,178,106,.3); white-space: nowrap; }
+#toast.on { opacity: 1; transform: translate(-50%, 0); }
 
 /* the voice tints the pool behind the words: warm for Neil, cool for Lumen */
 #shade::before, #shade::after { content: ""; position: absolute; inset: 0; opacity: 0; transition: opacity 1s ease; }

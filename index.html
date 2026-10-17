@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400;1,600&family=Outfit:wght@200;300;400&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20">
+<link rel="stylesheet" href="style.css?v=21">
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -54,9 +54,9 @@
       <div id="deck-sec"></div>
     </div>
     <div class="mid">
-      <button id="back" class="round" title="One line back (&#8592;)" aria-label="One line back"><svg viewBox="0 0 24 24"><path d="M6 5v14M19 5 9 12l10 7z"/></svg></button>
-      <button id="play" class="big" title="Play / Pause (space)" aria-label="Play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
-      <button id="fwd" class="round" title="One line forward (&#8594;)" aria-label="One line forward"><svg viewBox="0 0 24 24"><path d="M18 5v14M5 5l10 7-10 7z"/></svg></button>
+      <button id="back" class="round" data-l="Line back" title="One line back (&#8592;)" aria-label="One line back"><svg viewBox="0 0 24 24"><path d="M6 5v14M19 5 9 12l10 7z"/></svg></button>
+      <button id="play" class="big" data-l="Play" title="Play / Pause (space)" aria-label="Play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+      <button id="fwd" class="round" data-l="Next line" title="One line forward (&#8594;)" aria-label="One line forward"><svg viewBox="0 0 24 24"><path d="M18 5v14M5 5l10 7-10 7z"/></svg></button>
     </div>
     <div class="side right">
       <div id="speeds" title="Reading speed (- +)"></div>
@@ -65,6 +65,7 @@
   </div>
 </div>
 
+<div id="toast"></div>
 <div id="hint" class="gone"><div class="mouse"><div class="wheel"></div></div><div>Scroll to fly. Scroll back to rewind time.<br>Or press Play and let it fly.</div></div>
 
 <div id="credits">
@@ -103,9 +104,9 @@
   </div>
 </div>
 
-<div id="ver">v20</div>
+<div id="ver">v21</div>
 <div id="track"></div>
-<script type="module" src="js/main.js?v=20"></script>
+<script type="module" src="js/main.js?v=21"></script>
 <script>
   // if the 3D view cannot start (old browser, no WebGL, blocked network), say so instead of waiting forever
   setTimeout(function () {

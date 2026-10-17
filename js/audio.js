@@ -161,7 +161,7 @@ export class Score {
     this.fbuf = new Uint8Array(this.an.frequencyBinCount); this.avgB = 0; this.avgT = 0;
     this.cues = {};
     for (const [k, f] of Object.entries(CUE_FILES)) {
-      const el = new Audio('audio/' + f + '.mp3?v=20');
+      const el = new Audio('audio/' + f + '.mp3?v=21');
       el.preload = 'auto'; el.loop = false; el.preservesPitch = false; el.mozPreservesPitch = false; el.webkitPreservesPitch = false;
       el.crossOrigin = 'anonymous';
       const src = ctx.createMediaElementSource(el), g = ctx.createGain(); g.gain.value = 0;
@@ -171,7 +171,7 @@ export class Score {
       el.muted = true; el.play().then(() => { el.muted = false; if (this.cue !== k || !this.running || this.muted) el.pause(); }).catch(() => { el.muted = false; });
     }
     this.cue = null;
-    fetch('audio/hits.mp3?v=20').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this.buf.hits = buf; this.buf.hitsR = reversed(ctx, buf); }).catch(() => {});
+    fetch('audio/hits.mp3?v=21').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this.buf.hits = buf; this.buf.hitsR = reversed(ctx, buf); }).catch(() => {});
 
     await this.renderOneShots();
     this.out.gain.setTargetAtTime(this.muted ? 0 : 0.9, ctx.currentTime, 0.8);

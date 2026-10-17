@@ -3,10 +3,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SECTIONS } from './content.js?v=20';
-import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=20';
-import { Score } from './audio.js?v=20';
-import { Presence } from './presences.js?v=20';
+import { SECTIONS } from './content.js?v=21';
+import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=21';
+import { Score } from './audio.js?v=21';
+import { Presence } from './presences.js?v=21';
 
 const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 600;
@@ -171,7 +171,7 @@ const SKY_LEVEL = [0.55, 0.5, 0.55, 0.55, 0.5, 0.75, 0.65, 0.5, 0.45, 0.5, 0.55,
 const skyLoader = new THREE.TextureLoader();
 const skies = SKY_FILES.map((name, k) => {
   const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-  skyLoader.load('img/bg-' + name + '.jpg?v=20', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
+  skyLoader.load('img/bg-' + name + '.jpg?v=21', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(680, 383), mat);
   mesh.position.z = -175; mesh.renderOrder = -10; mesh.visible = false; mesh.frustumCulled = false;
   scene.add(mesh);
@@ -406,7 +406,7 @@ function setAuto(on) {
   auto = on; autoY = scrollY; flying = null;
   $('#hint').classList.add('gone');
   $('#play').classList.toggle('on', on);
-  $('#play').setAttribute('aria-label', on ? 'Pause' : 'Play');
+  $('#play').setAttribute('aria-label', on ? 'Pause' : 'Play'); $('#play').dataset.l = on ? 'Pause' : 'Play';
   $('#play').innerHTML = on ? '<svg viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
   lastMove = performance.now();
 }
@@ -421,14 +421,23 @@ function step(dir) {
   const target = (slots[j].start + slots[j].len * 0.2) * UNIT;
   window.scrollTo(0, target); autoY = target;
   $('#hint').classList.add('gone');
+  toast(j === cur ? 'From the start of this line' : dir < 0 ? 'One line back' : 'One line forward');
+}
+// a short word above the deck, so a tap on a phone says what it did
+let toastT = 0;
+function toast(msg) {
+  if (!MOBILE) return;
+  const t = $('#toast'); t.textContent = msg; t.classList.add('on');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 1400);
 }
 // playback speed for Play
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 let speedIdx = 2;
 try { const v = parseInt(localStorage.getItem('cbu-speed'), 10); if (v >= 0 && v < SPEEDS.length) speedIdx = v; } catch (e) {}
 SPEEDS.forEach((v, i) => { const b = document.createElement('button'); b.textContent = v + '×'; b.onclick = () => setSpeed(i); $('#speeds').appendChild(b); });
-function setSpeed(i) {
+function setSpeed(i, quiet) {
   speedIdx = Math.max(0, Math.min(SPEEDS.length - 1, i));
+  if (!quiet) toast('Speed ' + SPEEDS[speedIdx] + '×' + (SPEEDS[speedIdx] < 1 ? ', slower' : SPEEDS[speedIdx] > 1 ? ', faster' : ', normal'));
   [...$('#speeds').children].forEach((b, k) => b.classList.toggle('on', k === speedIdx));
   try { localStorage.setItem('cbu-speed', speedIdx); } catch (e) {}
 }
@@ -1000,7 +1009,17 @@ else {
 }
 if (MOBILE) document.querySelectorAll('.g-how [data-m]').forEach(e => e.textContent = e.dataset.m);
 if (MOBILE) document.querySelector('.g-how .keys').innerHTML = '<kbd>&lsaquo;</kbd><kbd>&rsaquo;</kbd>';
-if (MOBILE) $('#hint div:last-child').innerHTML = 'Swipe up to fly. Swipe down to rewind time.<br>Or press Play and let it fly.';
+if (MOBILE) $('#hint div:last-child').innerHTML = 'Swipe up to fly, down to rewind.<br>Or press Play. Pick a slower speed below.';
+// phones: every speed on its own row, a word under each button, and a tap on a faded deck only wakes it
+if (MOBILE) {
+  document.documentElement.classList.add('touch');
+  const row = document.createElement('div'); row.className = 'spdrow';
+  row.innerHTML = '<span class="lbl">Speed</span>'; row.appendChild($('#speeds')); $('#deck').appendChild(row);
+  let wake = false;
+  $('#deck').addEventListener('pointerdown', () => { wake = $('#deck').classList.contains('idle'); lastMove = performance.now(); }, true);
+  $('#deck').addEventListener('click', e => { if (wake) { e.stopPropagation(); e.preventDefault(); wake = false; } }, true);
+  addEventListener('touchstart', () => { lastMove = performance.now(); }, { passive: true });
+}
 $('#begin').onclick = async () => {
   if ($('#begin').dataset.used) return; $('#begin').dataset.used = '1'; $('#begin').disabled = true;
   $('#gate').classList.add('gone');
@@ -1016,7 +1035,7 @@ $('#play').onclick = () => setAuto(!auto);
 document.addEventListener('visibilitychange', () => { const hidden = document.visibilityState === 'hidden'; score.sleep(hidden); if (!hidden) last = performance.now(); });
 $('#back').onclick = () => step(-1);
 $('#fwd').onclick = () => step(1);
-setSpeed(speedIdx);
+setSpeed(speedIdx, true);
 applyQuality();
 window.cbu = { get hot() { return hot; }, get expo() { return expo; }, get q() { return qLevel; }, flyTo, slots, secInfo, UNIT, score, get pos() { return pos; } };
 requestAnimationFrame(frame);

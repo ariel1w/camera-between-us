@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400;1,600&family=Outfit:wght@200;300;400&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=21">
+<link rel="stylesheet" href="style.css?v=22">
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -92,21 +92,16 @@
       <div class="h-item"><div class="h-ic"><span class="h-line"><i></i></span></div><b class="h-k" data-m="Timeline">Timeline</b><span class="h-t" data-m="Jump to any chapter">Jump to any chapter</span></div>
     </div>
     <div class="g-step on" id="g-phones">
-      <p class="g-note">Put on your headphones.<br>The sound moves all around you.</p>
+      <p class="g-note">Best with headphones.<br>The sound moves all around you.</p>
       <button id="begin" disabled>Preparing…</button>
-      <div class="g-row"><button class="g-btn ghost small" id="present" title="Full screen, plays by itself">Presentation mode</button><button class="g-btn ghost small" data-go="g-sure-ph">I have no headphones</button></div>
-    </div>
-    <div class="g-step" id="g-sure-ph">
-      <p class="g-ask">Are you sure?</p>
-      <p class="g-note">It is so much better with headphones.<br>The music and the world fly around you.</p>
-      <div class="g-row"><button class="g-btn" data-go="g-phones">I will put them on</button><button class="g-btn ghost" id="begin-anyway">Continue without</button></div>
+      <div class="g-row"><button class="g-btn ghost small" id="present" title="Full screen, plays by itself">Presentation mode</button></div>
     </div>
   </div>
 </div>
 
-<div id="ver">v21</div>
+<div id="ver">v22</div>
 <div id="track"></div>
-<script type="module" src="js/main.js?v=21"></script>
+<script type="module" src="js/main.js?v=22"></script>
 <script>
   // if the 3D view cannot start (old browser, no WebGL, blocked network), say so instead of waiting forever
   setTimeout(function () {

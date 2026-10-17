@@ -3,10 +3,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SECTIONS } from './content.js?v=21';
-import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=21';
-import { Score } from './audio.js?v=21';
-import { Presence } from './presences.js?v=21';
+import { SECTIONS } from './content.js?v=22';
+import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=22';
+import { Score } from './audio.js?v=22';
+import { Presence } from './presences.js?v=22';
 
 const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 600;
@@ -171,7 +171,7 @@ const SKY_LEVEL = [0.55, 0.5, 0.55, 0.55, 0.5, 0.75, 0.65, 0.5, 0.45, 0.5, 0.55,
 const skyLoader = new THREE.TextureLoader();
 const skies = SKY_FILES.map((name, k) => {
   const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-  skyLoader.load('img/bg-' + name + '.jpg?v=21', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
+  skyLoader.load('img/bg-' + name + '.jpg?v=22', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(680, 383), mat);
   mesh.position.z = -175; mesh.renderOrder = -10; mesh.visible = false; mesh.frustumCulled = false;
   scene.add(mesh);
@@ -986,9 +986,8 @@ function beam(from, to) {
 document.documentElement.classList.add('locked');
 window.scrollTo(0, 0);
 $('#begin').disabled = false;
-$('#begin').textContent = 'My headphones are on';
-// the gate: on a phone or tablet, ask for a computer first; then ask for headphones
-// (browsers cannot detect headphones without microphone permission, so we ask)
+$('#begin').textContent = 'Begin';
+// the gate: headphones are recommended, never required
 const gateStep = id => { document.querySelectorAll('.g-step').forEach(e => e.classList.toggle('on', e.id === id)); };
 document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => gateStep(b.dataset.go));
 document.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => {
@@ -996,7 +995,6 @@ document.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => {
   try { if (navigator.share && MOBILE) await navigator.share({ title: document.title, url }); else { await navigator.clipboard.writeText(url); b.textContent = 'Link copied. See you there.'; } }
   catch (e) { b.textContent = url; }
 });
-$('#begin-anyway').onclick = () => $('#begin').onclick();
 // presentation mode: full screen, then it plays by itself
 const canFS = !!document.documentElement.requestFullscreen;
 const toggleFS = () => { if (!canFS) return; if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); };

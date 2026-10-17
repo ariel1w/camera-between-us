@@ -3,10 +3,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SECTIONS } from './content.js?v=22';
-import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=22';
-import { Score } from './audio.js?v=22';
-import { Presence } from './presences.js?v=22';
+import { SECTIONS } from './content.js?v=23';
+import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=23';
+import { Score } from './audio.js?v=23';
+import { Presence } from './presences.js?v=23';
 
 const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 600;
@@ -171,7 +171,7 @@ const SKY_LEVEL = [0.55, 0.5, 0.55, 0.55, 0.5, 0.75, 0.65, 0.5, 0.45, 0.5, 0.55,
 const skyLoader = new THREE.TextureLoader();
 const skies = SKY_FILES.map((name, k) => {
   const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-  skyLoader.load('img/bg-' + name + '.jpg?v=22', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
+  skyLoader.load('img/bg-' + name + '.jpg?v=23', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(680, 383), mat);
   mesh.position.z = -175; mesh.renderOrder = -10; mesh.visible = false; mesh.frustumCulled = false;
   scene.add(mesh);
@@ -866,8 +866,9 @@ function placeLine(j) {
   const s = slots[j], el = els[j], W = innerWidth, H = innerHeight, narrow = W < 700;
   const speaker = s.kind === 'line' ? s.line.s : 'T';
   const center = s.kind === 'title' || speaker === 'H';
-  const margin = narrow ? 78 : Math.max(150, W * 0.1);
-  const colW = center ? Math.min(W * 0.88, 1000) : narrow ? W - 78 - 14 : Math.min(W * (s.hero ? 0.46 : 0.4), s.hero ? 760 : 640);
+  // phones: the presences wait in a band at the top, so the words get the full width below them
+  const margin = narrow ? 16 : Math.max(150, W * 0.1);
+  const colW = center ? Math.min(W * 0.88, 1000) : narrow ? W - 32 : Math.min(W * (s.hero ? 0.46 : 0.4), s.hero ? 760 : 640);
   const left = center ? (W - colW) / 2 : speaker === 'N' ? margin : W - margin - colW;
   const align = center ? 'center' : speaker === 'N' ? 'left' : 'right';
   el.style.left = left + 'px'; el.style.width = colW + 'px'; el.style.textAlign = align;
@@ -875,12 +876,12 @@ function placeLine(j) {
   el.style.display = 'block'; el.style.opacity = '0';
   const tx = el.querySelector('.tx'); if (tx) tx.style.fontSize = '';
   let h = el.offsetHeight;
-  const room = H - deckH() - 18 - 78;
+  const top = narrow ? 156 : 78, bottom = H - deckH() - 18;
+  const room = bottom - top;
   if (tx && h > room) {
     let fs = parseFloat(getComputedStyle(tx).fontSize);
     for (let k = 0; k < 8 && h > room && fs > 15; k++) { fs *= 0.88; tx.style.setProperty('font-size', fs + 'px', 'important'); h = el.offsetHeight; }
   }
-  const top = 78, bottom = H - deckH() - 18;
   let best = (top + bottom) / 2;
   if (s.kind !== 'title') {
     let bestScore = Infinity;
@@ -936,7 +937,7 @@ function renderText(k, si) {
         if (lastSpeaker && lastSpeaker !== s.line.s && Math.abs(vel) < 8) beam(lastSpeaker, s.line.s);
         // the other voice's last line lingers as an echo
         const prevJ = j - 1;
-        echoJ = prevJ >= 0 && slots[prevJ].kind === 'line' && slots[prevJ].line.s !== s.line.s && els[prevJ]._spot && !slots[prevJ].hero && !s.hero ? prevJ : -1;
+        echoJ = prevJ >= 0 && slots[prevJ].kind === 'line' && slots[prevJ].line.s !== s.line.s && els[prevJ]._spot && !slots[prevJ].hero && !s.hero && innerWidth >= 700 ? prevJ : -1;
         lastSpeaker = s.line.s;
       }
     }

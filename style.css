@@ -355,3 +355,11 @@ body[data-who="L"] #shade::after { opacity: 1; }
 
 #ver { position: fixed; right: 10px; bottom: 8px; font: 10px var(--mono); color: rgba(255,255,255,.22); z-index: 11; pointer-events: none; }
 #gate.gone ~ #ver { display: none; }
+
+/* phones: the presences sit small at the top, above the words, never under them */
+@media (max-width: 699px) {
+  .orb { top: 62px !important; width: 66px; height: 66px; margin-top: 0; }
+  .orb canvas { width: 66px; height: 66px; }
+  .orb .name { top: 62px; font-size: 9.5px; }
+  #orbN { left: 18px; } #orbL { right: 18px; }
+}

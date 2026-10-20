@@ -51,6 +51,7 @@
   <div class="row">
     <div class="side left">
       <button id="snd" title="Sound on or off" aria-label="Sound on or off"><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></button>
+      <button id="vo" title="Voice: off, Neil &amp; Lumen, or all in Neil's voice (V)" aria-label="Voice">VOICE</button>
       <div id="deck-sec"></div>
     </div>
     <div class="mid">
@@ -94,6 +95,7 @@
       <div class="g-speed"><div class="gs-pills"><span class="on">0.5×</span><span>1×</span><span>2×</span></div><div class="gs-txt"><b class="h-k">Reading speed</b><span class="h-t" id="gs-how">It starts slow, at 0.5×, so you can read every line. Faster or slower? Click the speed buttons at the bottom right of the screen, or press <kbd>+</kbd> and <kbd>-</kbd>.</span></div></div>
     </div>
     <div class="g-step on" id="g-phones">
+      <div class="g-vo"><b class="h-k">Voice</b><div class="vo-pick" id="vo-pick"><button data-vo="off">Off</button><button data-vo="duo">Neil &amp; Lumen</button><button data-vo="neil">All in Neil's voice</button></div></div>
       <p class="g-note">Best with headphones.<br>The sound moves all around you.</p>
       <button id="begin" disabled>Preparing…</button>
       <div class="g-row"><button class="g-btn ghost small" id="present" title="Full screen, plays by itself">Presentation mode</button></div>

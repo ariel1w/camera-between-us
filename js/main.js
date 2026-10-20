@@ -443,6 +443,7 @@ function setSpeed(i, quiet) {
   if (quiet) return;
   toast('Reading speed ' + SPEEDS[speedIdx] + '×' + (SPEEDS[speedIdx] < 1 ? ', slower' : SPEEDS[speedIdx] > 1 ? ', faster' : ', normal'), true);
   speedTip(0);
+  if (typeof vo !== 'undefined') vo.playbackRate = voRate();
   try { localStorage.setItem('cbu-rate', speedIdx); } catch (e) {}
 }
 // the reading speed, said plainly: a note over the glowing speed buttons when the flight starts and on the first Play
@@ -457,6 +458,46 @@ function speedTip(ms) {
   lastMove = performance.now();
   tipT = setTimeout(() => speedTip(0), ms);
 }
+
+// voice over: each line read aloud as it arrives. Neil in his own voice; Lumen in its own voice or in Neil's.
+// The voice keeps its natural pace below 1x (the pause after each line just grows) and speeds up above 1x
+// without changing pitch. On Play the flight waits for a line's voice to finish.
+const VO_MODES = ['off', 'duo', 'neil'], VO_NAMES = { off: 'Voice off', duo: 'Voice: Neil and Lumen', neil: "Voice: all in Neil's voice" };
+let voMode = 'duo';
+try { const v = localStorage.getItem('cbu-vo'); if (VO_MODES.includes(v)) voMode = v; } catch (e) {}
+const vo = new Audio(); vo.preload = 'auto'; vo.preservesPitch = true; vo.mozPreservesPitch = true; vo.webkitPreservesPitch = true;
+let voSlot = -1, voT = 0;
+const voRate = () => Math.max(1, SPEEDS[speedIdx]);
+function voLine(k) {
+  clearTimeout(voT); vo.pause(); voSlot = -1;
+  const sl = slots[k];
+  if (voMode === 'off' || score.muted || !sl || sl.kind !== 'line' || (sl.line.s !== 'N' && sl.line.s !== 'L')) return;
+  const dir = sl.line.s === 'N' ? 'N' : voMode === 'neil' ? 'LN' : 'L';
+  // a short wait, so racing through lines does not stutter out a syllable of each
+  voT = setTimeout(() => {
+    voSlot = k; vo.src = 'audio/vo/' + dir + '/' + sl.sec + '-' + sl.li + '.mp3?v=24';
+    vo.playbackRate = voRate();
+    vo.play().then(() => { if (score.ready) score.duck(0.6, (vo.duration || 4) / voRate()); }).catch(() => { voSlot = -1; });
+  }, auto ? 60 : 280);
+}
+vo.onended = vo.onerror = () => { voSlot = -1; };
+function voHolds(cur) {
+  if (voSlot < 0 || slots[voSlot] !== cur || vo.paused) return false;
+  return (autoY / UNIT - cur.start) / cur.len > 0.82;
+}
+function setVo(m, quiet) {
+  voMode = m;
+  document.querySelectorAll('#vo-pick button').forEach(b => b.classList.toggle('on', b.dataset.vo === m));
+  $('#vo').classList.toggle('off', m === 'off'); $('#vo').textContent = m === 'off' ? 'VOICE OFF' : 'VOICE';
+  try { localStorage.setItem('cbu-vo', m); } catch (e) {}
+  if (quiet) return;
+  toast(VO_NAMES[m], true);
+  if (m === 'off') { vo.pause(); voSlot = -1; } else if (started) voLine(slotAt(scrollY / UNIT + 0.001));
+}
+document.querySelectorAll('#vo-pick button').forEach(b => b.onclick = () => setVo(b.dataset.vo, true));
+$('#vo').onclick = () => setVo(VO_MODES[(VO_MODES.indexOf(voMode) + 1) % VO_MODES.length]);
+addEventListener('keydown', e => { if (started && (e.key === 'v' || e.key === 'V')) setVo(VO_MODES[(VO_MODES.indexOf(voMode) + 1) % VO_MODES.length]); });
+setVo(voMode, true);
 
 function flyTo(target) {
   const from = scrollY, to = Math.max(0, target * UNIT), dist = Math.abs(to - from) / UNIT;
@@ -539,7 +580,7 @@ function frame(now) {
   if (auto && started) {
     const cur = slots[slotAt(autoY / UNIT)];
     if (cur.kind === 'credits' && autoY / UNIT > cur.start + 4) setAuto(false);
-    else { autoY += cur.len / cur.dur * SPEEDS[speedIdx] * dt * UNIT; window.scrollTo(0, autoY); }
+    else if (!voHolds(cur)) { autoY += cur.len / cur.dur * SPEEDS[speedIdx] * dt * UNIT; window.scrollTo(0, autoY); }
   }
   const target = scrollY / UNIT;
   pos += (target - pos) * (1 - Math.exp(-dt * 6.5));
@@ -570,7 +611,7 @@ function frame(now) {
     intro = Math.min(1, introT / 2.6);
     if (introT >= 2.6 && apertureOpen === 0 && (score.ready || introT > 4.5)) { score.boom(); flash = 1; apertureOpen = 0.0001; burst = 1; }
     if (apertureOpen > 0 && apertureOpen < 1) apertureOpen = Math.min(1, apertureOpen + Math.min(0.5, realDt) * 2.6);
-    if (introT > 3.4 && !started) { started = true; document.documentElement.classList.remove('locked'); $('#hint').classList.remove('gone'); $('#hud').classList.add('on'); $('#deck').classList.add('on'); lastMove = performance.now(); setTimeout(() => speedTip(10000), 1400); if (presenting) setTimeout(() => setAuto(true), 1500); }
+    if (introT > 3.4 && !started) { started = true; document.documentElement.classList.remove('locked'); $('#hint').classList.remove('gone'); $('#hud').classList.add('on'); $('#deck').classList.add('on'); lastMove = performance.now(); setTimeout(() => speedTip(10000), 1400); voLine(slotAt(scrollY / UNIT + 0.001)); if (presenting) setTimeout(() => setAuto(true), 1500); }
   }
   burst *= Math.exp(-dt * 1.2);
   const openNow = started ? Math.min(1 - shut, 1) : (apertureOpen > 0 ? 1 - Math.pow(1 - apertureOpen, 3) : 0);
@@ -801,6 +842,7 @@ function frame(now) {
   // events
   if (lastSlot >= 0 && k !== lastSlot && started) {
     if (k - lastSlot <= 3) for (const ev of EVENTS) if (lastSlot < ev.slot && k >= ev.slot) ev.fn();
+    voLine(k);
   }
   lastSlot = k;
 
@@ -1042,13 +1084,13 @@ $('#begin').onclick = async () => {
   introT = 0;
   score.init().then(() => { if (introT < 2.2) score.windup(2.6 - introT); }).catch(e => console.warn('audio unavailable', e));
 };
-$('#snd').onclick = () => { score.setMuted(!score.muted); $('#snd').classList.toggle('off', score.muted); };
+$('#snd').onclick = () => { score.setMuted(!score.muted); $('#snd').classList.toggle('off', score.muted); if (score.muted) { vo.pause(); voSlot = -1; } };
 $('#rewind').onclick = () => { setAuto(false); flyTo(0); };
 $('#play').onclick = () => setAuto(!auto);
 // if a browser held the sound back, any later click or key unlocks it
 ['pointerdown', 'keydown', 'touchend'].forEach(ev => addEventListener(ev, () => score.unlock(), { passive: true }));
 // leaving the tab pauses music and flight together
-document.addEventListener('visibilitychange', () => { const hidden = document.visibilityState === 'hidden'; score.sleep(hidden); if (!hidden) last = performance.now(); });
+document.addEventListener('visibilitychange', () => { const hidden = document.visibilityState === 'hidden'; score.sleep(hidden); if (hidden) vo.pause(); else if (voSlot >= 0 && !vo.ended) vo.play().catch(() => {}); if (!hidden) last = performance.now(); });
 $('#back').onclick = () => step(-1);
 $('#fwd').onclick = () => step(1);
 setSpeed(speedIdx, true);

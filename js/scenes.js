@@ -1,7 +1,7 @@
 // The sixteen scenes. Each scene is a list of "states": functions that place
 // particle i (position, colour, size) into the scratch array O. Cues tie state
 // changes to specific lines of the text, so the picture follows the words.
-import * as SH from './shapes.js?v=23';
+import * as SH from './shapes.js?v=24';
 
 export const O = new Float32Array(7); // x y z r g b size
 const TAU = Math.PI * 2;

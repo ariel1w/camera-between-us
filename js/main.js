@@ -3,10 +3,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SECTIONS } from './content.js?v=23';
-import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=23';
-import { Score } from './audio.js?v=23';
-import { Presence } from './presences.js?v=23';
+import { SECTIONS } from './content.js?v=24';
+import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=24';
+import { Score } from './audio.js?v=24';
+import { Presence } from './presences.js?v=24';
 
 const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 600;
@@ -171,7 +171,7 @@ const SKY_LEVEL = [0.55, 0.5, 0.55, 0.55, 0.5, 0.75, 0.65, 0.5, 0.45, 0.5, 0.55,
 const skyLoader = new THREE.TextureLoader();
 const skies = SKY_FILES.map((name, k) => {
   const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-  skyLoader.load('img/bg-' + name + '.jpg?v=23', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
+  skyLoader.load('img/bg-' + name + '.jpg?v=24', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(680, 383), mat);
   mesh.position.z = -175; mesh.renderOrder = -10; mesh.visible = false; mesh.frustumCulled = false;
   scene.add(mesh);
@@ -409,6 +409,7 @@ function setAuto(on) {
   $('#play').setAttribute('aria-label', on ? 'Pause' : 'Play'); $('#play').dataset.l = on ? 'Pause' : 'Play';
   $('#play').innerHTML = on ? '<svg viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
   lastMove = performance.now();
+  if (on && !tipPlayed) { tipPlayed = true; speedTip(8000); }
 }
 // one line back or forward; Play keeps going from the new line
 function step(dir) {
@@ -425,21 +426,36 @@ function step(dir) {
 }
 // a short word above the deck, so a tap on a phone says what it did
 let toastT = 0;
-function toast(msg) {
-  if (!MOBILE) return;
+function toast(msg, always) {
+  if (!MOBILE && !always) return;
   const t = $('#toast'); t.textContent = msg; t.classList.add('on');
   clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 1400);
 }
 // playback speed for Play
+// everyone starts at 0.5x so every line can be read; a speed someone picks is remembered
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
-let speedIdx = 2;
-try { const v = parseInt(localStorage.getItem('cbu-speed'), 10); if (v >= 0 && v < SPEEDS.length) speedIdx = v; } catch (e) {}
+let speedIdx = 0;
+try { const v = parseInt(localStorage.getItem('cbu-rate'), 10); if (v >= 0 && v < SPEEDS.length) speedIdx = v; } catch (e) {}
 SPEEDS.forEach((v, i) => { const b = document.createElement('button'); b.textContent = v + '×'; b.onclick = () => setSpeed(i); $('#speeds').appendChild(b); });
 function setSpeed(i, quiet) {
   speedIdx = Math.max(0, Math.min(SPEEDS.length - 1, i));
-  if (!quiet) toast('Speed ' + SPEEDS[speedIdx] + '×' + (SPEEDS[speedIdx] < 1 ? ', slower' : SPEEDS[speedIdx] > 1 ? ', faster' : ', normal'));
   [...$('#speeds').children].forEach((b, k) => b.classList.toggle('on', k === speedIdx));
-  try { localStorage.setItem('cbu-speed', speedIdx); } catch (e) {}
+  if (quiet) return;
+  toast('Reading speed ' + SPEEDS[speedIdx] + '×' + (SPEEDS[speedIdx] < 1 ? ', slower' : SPEEDS[speedIdx] > 1 ? ', faster' : ', normal'), true);
+  speedTip(0);
+  try { localStorage.setItem('cbu-rate', speedIdx); } catch (e) {}
+}
+// the reading speed, said plainly: a note over the glowing speed buttons when the flight starts and on the first Play
+let tipT = 0, tipOn = false, tipPlayed = false;
+function speedTip(ms) {
+  clearTimeout(tipT);
+  tipOn = ms > 0;
+  $('#spdtip').classList.toggle('on', tipOn); document.documentElement.classList.toggle('tip', tipOn); $('#speeds').classList.toggle('hl', tipOn);
+  if (!tipOn) return;
+  $('#spdtip b').textContent = 'Reading speed: ' + SPEEDS[speedIdx] + '×';
+  $('#spdtip span').textContent = MOBILE ? 'Too fast or too slow? Tap another speed in the Speed row below.' : 'Too fast or too slow? Click another speed here, or press + and -.';
+  lastMove = performance.now();
+  tipT = setTimeout(() => speedTip(0), ms);
 }
 
 function flyTo(target) {
@@ -554,7 +570,7 @@ function frame(now) {
     intro = Math.min(1, introT / 2.6);
     if (introT >= 2.6 && apertureOpen === 0 && (score.ready || introT > 4.5)) { score.boom(); flash = 1; apertureOpen = 0.0001; burst = 1; }
     if (apertureOpen > 0 && apertureOpen < 1) apertureOpen = Math.min(1, apertureOpen + Math.min(0.5, realDt) * 2.6);
-    if (introT > 3.4 && !started) { started = true; document.documentElement.classList.remove('locked'); $('#hint').classList.remove('gone'); $('#hud').classList.add('on'); $('#deck').classList.add('on'); lastMove = performance.now(); if (presenting) setTimeout(() => setAuto(true), 1500); }
+    if (introT > 3.4 && !started) { started = true; document.documentElement.classList.remove('locked'); $('#hint').classList.remove('gone'); $('#hud').classList.add('on'); $('#deck').classList.add('on'); lastMove = performance.now(); setTimeout(() => speedTip(10000), 1400); if (presenting) setTimeout(() => setAuto(true), 1500); }
   }
   burst *= Math.exp(-dt * 1.2);
   const openNow = started ? Math.min(1 - shut, 1) : (apertureOpen > 0 ? 1 - Math.pow(1 - apertureOpen, 3) : 0);
@@ -806,7 +822,7 @@ function frame(now) {
   $('#deck-sec').textContent = secName(si);
   const voice = slot.kind === 'line' ? slot.line.s : '';
   if (document.body.dataset.who !== voice) document.body.dataset.who = voice;
-  $('#deck').classList.toggle('idle', auto && performance.now() - lastMove > 2600 && !scrubbing);
+  $('#deck').classList.toggle('idle', auto && performance.now() - lastMove > 2600 && !scrubbing && !tipOn);
 
   // sound
   const sw = lp < -0.15 ? 0 : 1;
@@ -1008,7 +1024,8 @@ else {
 }
 if (MOBILE) document.querySelectorAll('.g-how [data-m]').forEach(e => e.textContent = e.dataset.m);
 if (MOBILE) document.querySelector('.g-how .keys').innerHTML = '<kbd>&lsaquo;</kbd><kbd>&rsaquo;</kbd>';
-if (MOBILE) $('#hint div:last-child').innerHTML = 'Swipe up to fly, down to rewind.<br>Or press Play. Pick a slower speed below.';
+if (MOBILE) $('#hint > div:last-child').innerHTML = 'Swipe up to fly, down to rewind.<br>Or press Play. Pick a speed below.';
+if (MOBILE) $('#gs-how').textContent = 'It starts slow, at 0.5×, so you can read every line. Faster or slower? Tap the Speed row at the bottom of the screen.';
 // phones: every speed on its own row, a word under each button, and a tap on a faded deck only wakes it
 if (MOBILE) {
   document.documentElement.classList.add('touch');

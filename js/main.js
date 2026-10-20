@@ -3,10 +3,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SECTIONS } from './content.js?v=24';
-import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=24';
-import { Score } from './audio.js?v=24';
-import { Presence } from './presences.js?v=24';
+import { SECTIONS } from './content.js?v=25';
+import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=25';
+import { Score } from './audio.js?v=25';
+import { Presence } from './presences.js?v=25';
 
 const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 600;
@@ -171,7 +171,7 @@ const SKY_LEVEL = [0.55, 0.5, 0.55, 0.55, 0.5, 0.75, 0.65, 0.5, 0.45, 0.5, 0.55,
 const skyLoader = new THREE.TextureLoader();
 const skies = SKY_FILES.map((name, k) => {
   const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-  skyLoader.load('img/bg-' + name + '.jpg?v=24', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
+  skyLoader.load('img/bg-' + name + '.jpg?v=25', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(680, 383), mat);
   mesh.position.z = -175; mesh.renderOrder = -10; mesh.visible = false; mesh.frustumCulled = false;
   scene.add(mesh);
@@ -475,7 +475,7 @@ function voLine(k) {
   const dir = sl.line.s === 'N' ? 'N' : voMode === 'neil' ? 'LN' : 'L';
   // a short wait, so racing through lines does not stutter out a syllable of each
   voT = setTimeout(() => {
-    voSlot = k; vo.src = 'audio/vo/' + dir + '/' + sl.sec + '-' + sl.li + '.mp3?v=24';
+    voSlot = k; vo.src = 'audio/vo/' + dir + '/' + sl.sec + '-' + sl.li + '.mp3?v=25';
     vo.playbackRate = voRate();
     vo.play().then(() => { if (score.ready) score.duck(0.6, (vo.duration || 4) / voRate()); }).catch(() => { voSlot = -1; });
   }, auto ? 60 : 280);
@@ -1095,5 +1095,5 @@ $('#back').onclick = () => step(-1);
 $('#fwd').onclick = () => step(1);
 setSpeed(speedIdx, true);
 applyQuality();
-window.cbu = { get hot() { return hot; }, get expo() { return expo; }, get q() { return qLevel; }, flyTo, slots, secInfo, UNIT, score, get pos() { return pos; } };
+window.cbu = { get vo() { return { el: vo, mode: voMode, slot: voSlot }; }, get auto() { return auto; }, get hot() { return hot; }, get expo() { return expo; }, get q() { return qLevel; }, flyTo, slots, secInfo, UNIT, score, get pos() { return pos; } };
 requestAnimationFrame(frame);

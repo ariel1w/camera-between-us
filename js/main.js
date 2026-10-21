@@ -3,10 +3,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SECTIONS } from './content.js?v=27';
-import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=27';
-import { Score } from './audio.js?v=27';
-import { Presence } from './presences.js?v=27';
+import { SECTIONS } from './content.js?v=28';
+import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=28';
+import { Score } from './audio.js?v=28';
+import { Presence } from './presences.js?v=28';
 
 const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 600;
@@ -171,7 +171,7 @@ const SKY_LEVEL = [0.55, 0.5, 0.55, 0.55, 0.5, 0.75, 0.65, 0.5, 0.45, 0.5, 0.55,
 const skyLoader = new THREE.TextureLoader();
 const skies = SKY_FILES.map((name, k) => {
   const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-  skyLoader.load('img/bg-' + name + '.jpg?v=27', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
+  skyLoader.load('img/bg-' + name + '.jpg?v=28', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(680, 383), mat);
   mesh.position.z = -175; mesh.renderOrder = -10; mesh.visible = false; mesh.frustumCulled = false;
   scene.add(mesh);
@@ -466,7 +466,7 @@ const VO_MODES = ['off', 'duo', 'neil'], VO_NAMES = { off: 'Voice off', duo: 'Vo
 let voMode = 'duo';
 try { const v = localStorage.getItem('cbu-vo'); if (VO_MODES.includes(v)) voMode = v; } catch (e) {}
 const vo = new Audio(); vo.preload = 'auto'; vo.preservesPitch = true; vo.mozPreservesPitch = true; vo.webkitPreservesPitch = true;
-let voSlot = -1, voT = 0, voGain = null;
+let voSlot = -1, voT = 0, voGain = null, voFirst = 0;  // voFirst: when the very first line may speak
 // the voice sits inside the music, not on top of it: about 6 dB down, and each line fades in instead of arriving at full force
 const VO_LEVEL = 0.5;
 vo.volume = VO_LEVEL;
@@ -486,12 +486,14 @@ function voLine(k) {
   if (voMode === 'off' || score.muted || !sl || sl.kind !== 'line' || (sl.line.s !== 'N' && sl.line.s !== 'L')) return;
   const dir = sl.line.s === 'N' ? 'N' : voMode === 'neil' ? 'LN' : 'L';
   // a short wait, so racing through lines does not stutter out a syllable of each
+  const lead = Math.max(0, voFirst - performance.now()), carried = lead > 0;
   voT = setTimeout(() => {
-    voSlot = k; vo.src = 'audio/vo/' + dir + '/' + sl.sec + '-' + sl.li + '.mp3?v=27';
+    voSlot = k; vo.src = 'audio/vo/' + dir + '/' + sl.sec + '-' + sl.li + '.mp3?v=28';
     vo.playbackRate = voRate();
     voFadeIn();
-    vo.play().then(() => { if (score.ready) score.duck(0.82, (vo.duration || 4) / voRate(), 0.5); }).catch(() => { voSlot = -1; });
-  }, auto ? 60 : 280);
+    // the first line is carried by the music that led into it; later lines ask it to step back a little
+    vo.play().then(() => { if (score.ready && !carried) score.duck(0.82, (vo.duration || 4) / voRate(), 0.5); }).catch(() => { voSlot = -1; });
+  }, Math.max(lead, auto ? 60 : 280));
 }
 vo.onended = vo.onerror = () => { voSlot = -1; };
 function voHolds(cur) {
@@ -624,7 +626,7 @@ function frame(now) {
     intro = Math.min(1, introT / 2.6);
     if (introT >= 2.6 && apertureOpen === 0 && (score.ready || introT > 4.5)) { score.boom(); flash = 1; apertureOpen = 0.0001; burst = 1; }
     if (apertureOpen > 0 && apertureOpen < 1) apertureOpen = Math.min(1, apertureOpen + Math.min(0.5, realDt) * 2.6);
-    if (introT > 3.4 && !started) { started = true; document.documentElement.classList.remove('locked'); $('#hint').classList.remove('gone'); $('#hud').classList.add('on'); $('#deck').classList.add('on'); lastMove = performance.now(); setTimeout(() => speedTip(10000), 1400); voLine(slotAt(scrollY / UNIT + 0.001)); if (presenting) setTimeout(() => setAuto(true), 1500); }
+    if (introT > 3.4 && !started) { started = true; document.documentElement.classList.remove('locked'); $('#hint').classList.remove('gone'); $('#hud').classList.add('on'); $('#deck').classList.add('on'); lastMove = performance.now(); setTimeout(() => speedTip(10000), 1400); if (voMode !== 'off') { score.voiceBed(true); score.phrase('section'); voFirst = performance.now() + 3500; } voLine(slotAt(scrollY / UNIT + 0.001)); if (presenting) setTimeout(() => setAuto(true), 1500); }
   }
   burst *= Math.exp(-dt * 1.2);
   const openNow = started ? Math.min(1 - shut, 1) : (apertureOpen > 0 ? 1 - Math.pow(1 - apertureOpen, 3) : 0);

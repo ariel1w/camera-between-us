@@ -78,6 +78,19 @@ async function render(secs, build, rate = 44100) {
   return oc.startRendering();
 }
 
+// brown noise: soft and dark, the body of moving water; tilted so the loop joins without a click
+function brownBuf(ctx, secs) {
+  const len = Math.floor(ctx.sampleRate * secs), buf = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch); let last = 0, peak = 0;
+    for (let i = 0; i < len; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = last; }
+    const tilt = d[len - 1] - d[0];
+    for (let i = 0; i < len; i++) { d[i] -= tilt * i / (len - 1); peak = Math.max(peak, Math.abs(d[i])); }
+    for (let i = 0; i < len; i++) d[i] /= peak * 1.1;
+  }
+  return buf;
+}
+
 function noiseBuf(ctx, secs) {
   const len = Math.floor(ctx.sampleRate * secs), buf = ctx.createBuffer(2, len, ctx.sampleRate);
   for (let ch = 0; ch < 2; ch++) { const d = buf.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1; }
@@ -116,10 +129,7 @@ export class Score {
 
     // textured beds from one stereo noise loop (scene sound design)
     const nb = noiseBuf(ctx, 5);
-    // all beds pass one gain and filter, so the world can step back and lose its hiss while a voice speaks
-    this.bedBus = ctx.createGain(); this.bedBus.gain.value = 1;
-    this.bedFilt = ctx.createBiquadFilter(); this.bedFilt.type = 'lowpass'; this.bedFilt.frequency.value = 20000; this.bedFilt.Q.value = 0.5;
-    this.bedBus.connect(this.bedFilt); this.bedFilt.connect(this.bus);
+    this.bedBus = ctx.createGain(); this.bedBus.gain.value = 1; this.bedBus.connect(this.bus);
     const bed = (type, f, q) => {
       const src = ctx.createBufferSource(); src.buffer = nb; src.loop = true; src.start(0, Math.random() * 4);
       const fl = ctx.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q;
@@ -135,6 +145,11 @@ export class Score {
       air: bed('bandpass', 650, 0.6),
       airHi: bed('highpass', 6500, 0.5),
     };
+    // under the voice over the air gives way to water: a slow, gentle tide, with now and then a drop
+    const ws = ctx.createBufferSource(); ws.buffer = brownBuf(ctx, 6); ws.loop = true; ws.start(0, Math.random() * 5);
+    const wf = ctx.createBiquadFilter(); wf.type = 'lowpass'; wf.frequency.value = 500; wf.Q.value = 0.7;
+    const wg = ctx.createGain(); wg.gain.value = 0; ws.connect(wf); wf.connect(wg); wg.connect(this.bedBus);
+    this.beds.water = { g: wg, fl: wf }; this.waveT = 0; this.nextDrop = 2; this.vAmb = false;
     this.gust = 0; this.gustT = 0; this.nextBird = 3; this.nextCricket = 0;
     // the recorded score
     // the music sits UNDER the sound of the world: effects lead, music carries
@@ -165,7 +180,7 @@ export class Score {
     this.fbuf = new Uint8Array(this.an.frequencyBinCount); this.avgB = 0; this.avgT = 0;
     this.cues = {};
     for (const [k, f] of Object.entries(CUE_FILES)) {
-      const el = new Audio('audio/' + f + '.mp3?v=27');
+      const el = new Audio('audio/' + f + '.mp3?v=28');
       el.preload = 'auto'; el.loop = false; el.preservesPitch = false; el.mozPreservesPitch = false; el.webkitPreservesPitch = false;
       el.crossOrigin = 'anonymous';
       const src = ctx.createMediaElementSource(el), g = ctx.createGain(); g.gain.value = 0;
@@ -175,7 +190,7 @@ export class Score {
       el.muted = true; el.play().then(() => { el.muted = false; if (this.cue !== k || !this.running || this.muted) el.pause(); }).catch(() => { el.muted = false; });
     }
     this.cue = null;
-    fetch('audio/hits.mp3?v=27').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this.buf.hits = buf; this.buf.hitsR = reversed(ctx, buf); }).catch(() => {});
+    fetch('audio/hits.mp3?v=28').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this.buf.hits = buf; this.buf.hitsR = reversed(ctx, buf); }).catch(() => {});
 
     await this.renderOneShots();
     this.out.gain.setTargetAtTime(this.muted ? 0 : 0.9, ctx.currentTime, 0.8);
@@ -477,12 +492,14 @@ export class Score {
   }
 
   // music steps back for a moment
-  // voice over on: the noise beds sit lower and darker, so under a voice they read as a place, not as tape hiss
-  voiceBed(on) {
-    if (!this.ready || this.bedOn === on) return;
-    this.bedOn = on; const now = this.ctx.currentTime;
-    this.bedBus.gain.setTargetAtTime(on ? 0.3 : 1, now, 0.6);
-    this.bedFilt.frequency.setTargetAtTime(on ? 2200 : 20000, now, 0.6);
+  // voice over on: water instead of air, since the air's hiss under a voice sounds like a noisy recording
+  voiceBed(on) { this.vAmb = on; }
+
+  drop() {  // one soft drop of water, far off
+    const ctx = this.ctx, t = ctx.currentTime + 0.01, f = 700 + Math.random() * 900;
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 1.7, t + 0.06);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.006 + Math.random() * 0.008, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    o.connect(g); g.connect(this.bedBus); g.connect(this.verbIn); o.start(t); o.stop(t + 0.14);
   }
 
   duck(level, secs, ease = 0.08) {  // ease: how gently the music steps back (time constant, seconds)
@@ -610,9 +627,17 @@ export class Score {
     this.gustT -= dt;
     if (this.gustT <= 0) { this.gustT = 3 + Math.random() * 7; this.gustTo = Math.random() < 0.35 ? 0.6 + Math.random() * 0.4 : Math.random() * 0.3; }
     this.gust += ((this.gustTo || 0) - this.gust) * Math.min(1, dt * 0.35);
-    const musicOn = this.cue && now < this.phraseEnd, airK = (musicOn ? 0.55 : 1) * (st.credits ? 0.3 : 1) * (st.air == null ? 1 : st.air);
+    const musicOn = this.cue && now < this.phraseEnd, airK = (musicOn ? 0.55 : 1) * (st.credits ? 0.3 : 1) * (st.air == null ? 1 : st.air) * (this.vAmb ? 0 : 1);
     set(B.air, (0.006 + this.gust * 0.016) * airK, 0.6); set(B.airHi, (0.0012 + this.gust * 0.0035) * airK, 0.6); // a whisper under everything
     B.air.fl.frequency.setTargetAtTime(420 + this.gust * 700 + av * 25, now, 0.8);
+    // the water: swells about every 6.5 s, some stronger than others, and over a minute and a half it comes in
+    // and nearly goes, so it never becomes a constant wash
+    this.waveT += dt;
+    const wave = 0.5 - 0.5 * Math.cos(this.waveT * Math.PI * 2 / 6.5), swell = 0.6 + 0.4 * Math.sin(this.waveT * Math.PI * 2 / 17);
+    const tide = 0.12 + 0.88 * Math.pow(0.5 - 0.5 * Math.cos(this.waveT * Math.PI * 2 / 95), 1.5);
+    set(B.water, this.vAmb ? (0.012 + 0.016 * wave * swell) * tide * (st.credits ? 0.3 : 1) : 0, 0.6);
+    B.water.fl.frequency.setTargetAtTime(320 + 520 * wave, now, 0.6);
+    if (this.vAmb && !st.freeze && tide > 0.6 && (this.nextDrop -= dt) <= 0) { this.nextDrop = 5 + Math.random() * 10; this.drop(); }
     // birds far and near
     if (st.birds > 0 && !st.freeze) {
       this.nextBird -= dt * st.birds;

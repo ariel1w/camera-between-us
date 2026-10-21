@@ -116,10 +116,14 @@ export class Score {
 
     // textured beds from one stereo noise loop (scene sound design)
     const nb = noiseBuf(ctx, 5);
+    // all beds pass one gain and filter, so the world can step back and lose its hiss while a voice speaks
+    this.bedBus = ctx.createGain(); this.bedBus.gain.value = 1;
+    this.bedFilt = ctx.createBiquadFilter(); this.bedFilt.type = 'lowpass'; this.bedFilt.frequency.value = 20000; this.bedFilt.Q.value = 0.5;
+    this.bedBus.connect(this.bedFilt); this.bedFilt.connect(this.bus);
     const bed = (type, f, q) => {
       const src = ctx.createBufferSource(); src.buffer = nb; src.loop = true; src.start(0, Math.random() * 4);
       const fl = ctx.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q;
-      const g = ctx.createGain(); g.gain.value = 0; src.connect(fl); fl.connect(g); g.connect(this.bus);
+      const g = ctx.createGain(); g.gain.value = 0; src.connect(fl); fl.connect(g); g.connect(this.bedBus);
       return { g, fl };
     };
     this.beds = {
@@ -161,7 +165,7 @@ export class Score {
     this.fbuf = new Uint8Array(this.an.frequencyBinCount); this.avgB = 0; this.avgT = 0;
     this.cues = {};
     for (const [k, f] of Object.entries(CUE_FILES)) {
-      const el = new Audio('audio/' + f + '.mp3?v=26');
+      const el = new Audio('audio/' + f + '.mp3?v=27');
       el.preload = 'auto'; el.loop = false; el.preservesPitch = false; el.mozPreservesPitch = false; el.webkitPreservesPitch = false;
       el.crossOrigin = 'anonymous';
       const src = ctx.createMediaElementSource(el), g = ctx.createGain(); g.gain.value = 0;
@@ -171,7 +175,7 @@ export class Score {
       el.muted = true; el.play().then(() => { el.muted = false; if (this.cue !== k || !this.running || this.muted) el.pause(); }).catch(() => { el.muted = false; });
     }
     this.cue = null;
-    fetch('audio/hits.mp3?v=26').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this.buf.hits = buf; this.buf.hitsR = reversed(ctx, buf); }).catch(() => {});
+    fetch('audio/hits.mp3?v=27').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this.buf.hits = buf; this.buf.hitsR = reversed(ctx, buf); }).catch(() => {});
 
     await this.renderOneShots();
     this.out.gain.setTargetAtTime(this.muted ? 0 : 0.9, ctx.currentTime, 0.8);
@@ -473,10 +477,18 @@ export class Score {
   }
 
   // music steps back for a moment
-  duck(level, secs) {
+  // voice over on: the noise beds sit lower and darker, so under a voice they read as a place, not as tape hiss
+  voiceBed(on) {
+    if (!this.ready || this.bedOn === on) return;
+    this.bedOn = on; const now = this.ctx.currentTime;
+    this.bedBus.gain.setTargetAtTime(on ? 0.3 : 1, now, 0.6);
+    this.bedFilt.frequency.setTargetAtTime(on ? 2200 : 20000, now, 0.6);
+  }
+
+  duck(level, secs, ease = 0.08) {  // ease: how gently the music steps back (time constant, seconds)
     const now = this.ctx.currentTime;
     this.music.gain.cancelScheduledValues(now);
-    this.music.gain.setTargetAtTime(level * this.musicLevel, now, 0.08);
+    this.music.gain.setTargetAtTime(level * this.musicLevel, now, ease);
     this.music.gain.setTargetAtTime(this.musicLevel, now + secs, 0.8);
   }
 

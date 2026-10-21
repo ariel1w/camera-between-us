@@ -3,10 +3,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SECTIONS } from './content.js?v=26';
-import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=26';
-import { Score } from './audio.js?v=26';
-import { Presence } from './presences.js?v=26';
+import { SECTIONS } from './content.js?v=27';
+import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=27';
+import { Score } from './audio.js?v=27';
+import { Presence } from './presences.js?v=27';
 
 const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 600;
@@ -171,7 +171,7 @@ const SKY_LEVEL = [0.55, 0.5, 0.55, 0.55, 0.5, 0.75, 0.65, 0.5, 0.45, 0.5, 0.55,
 const skyLoader = new THREE.TextureLoader();
 const skies = SKY_FILES.map((name, k) => {
   const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-  skyLoader.load('img/bg-' + name + '.jpg?v=26', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
+  skyLoader.load('img/bg-' + name + '.jpg?v=27', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(680, 383), mat);
   mesh.position.z = -175; mesh.renderOrder = -10; mesh.visible = false; mesh.frustumCulled = false;
   scene.add(mesh);
@@ -466,7 +466,19 @@ const VO_MODES = ['off', 'duo', 'neil'], VO_NAMES = { off: 'Voice off', duo: 'Vo
 let voMode = 'duo';
 try { const v = localStorage.getItem('cbu-vo'); if (VO_MODES.includes(v)) voMode = v; } catch (e) {}
 const vo = new Audio(); vo.preload = 'auto'; vo.preservesPitch = true; vo.mozPreservesPitch = true; vo.webkitPreservesPitch = true;
-let voSlot = -1, voT = 0;
+let voSlot = -1, voT = 0, voGain = null;
+// the voice sits inside the music, not on top of it: about 6 dB down, and each line fades in instead of arriving at full force
+const VO_LEVEL = 0.5;
+vo.volume = VO_LEVEL;
+function voFadeIn() {
+  if (!voGain && score.ctx) {
+    try { const src = score.ctx.createMediaElementSource(vo); voGain = score.ctx.createGain(); src.connect(voGain); voGain.connect(score.ctx.destination); vo.volume = 1; } catch (e) {}
+  }
+  score.voiceBed(true);
+  if (!voGain) return;
+  const now = score.ctx.currentTime;
+  voGain.gain.cancelScheduledValues(now); voGain.gain.setValueAtTime(0, now); voGain.gain.linearRampToValueAtTime(VO_LEVEL, now + 0.35);
+}
 const voRate = () => Math.max(1, SPEEDS[speedIdx]);
 function voLine(k) {
   clearTimeout(voT); vo.pause(); voSlot = -1;
@@ -475,9 +487,10 @@ function voLine(k) {
   const dir = sl.line.s === 'N' ? 'N' : voMode === 'neil' ? 'LN' : 'L';
   // a short wait, so racing through lines does not stutter out a syllable of each
   voT = setTimeout(() => {
-    voSlot = k; vo.src = 'audio/vo/' + dir + '/' + sl.sec + '-' + sl.li + '.mp3?v=26';
+    voSlot = k; vo.src = 'audio/vo/' + dir + '/' + sl.sec + '-' + sl.li + '.mp3?v=27';
     vo.playbackRate = voRate();
-    vo.play().then(() => { if (score.ready) score.duck(0.6, (vo.duration || 4) / voRate()); }).catch(() => { voSlot = -1; });
+    voFadeIn();
+    vo.play().then(() => { if (score.ready) score.duck(0.82, (vo.duration || 4) / voRate(), 0.5); }).catch(() => { voSlot = -1; });
   }, auto ? 60 : 280);
 }
 vo.onended = vo.onerror = () => { voSlot = -1; };
@@ -492,7 +505,7 @@ function setVo(m, quiet) {
   try { localStorage.setItem('cbu-vo', m); } catch (e) {}
   if (quiet) return;
   toast(VO_NAMES[m], true);
-  if (m === 'off') { vo.pause(); voSlot = -1; } else if (started) voLine(slotAt(scrollY / UNIT + 0.001));
+  if (m === 'off') { vo.pause(); voSlot = -1; score.voiceBed(false); } else if (started) voLine(slotAt(scrollY / UNIT + 0.001));
 }
 document.querySelectorAll('#vo-pick button').forEach(b => b.onclick = () => setVo(b.dataset.vo, true));
 $('#vo').onclick = () => setVo(VO_MODES[(VO_MODES.indexOf(voMode) + 1) % VO_MODES.length]);

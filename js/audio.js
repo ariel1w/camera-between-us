@@ -149,7 +149,7 @@ export class Score {
     const ws = ctx.createBufferSource(); ws.buffer = brownBuf(ctx, 6); ws.loop = true; ws.start(0, Math.random() * 5);
     const wf = ctx.createBiquadFilter(); wf.type = 'lowpass'; wf.frequency.value = 500; wf.Q.value = 0.7;
     const wg = ctx.createGain(); wg.gain.value = 0; ws.connect(wf); wf.connect(wg); wg.connect(this.bedBus);
-    this.beds.water = { g: wg, fl: wf }; this.waveT = 0; this.nextDrop = 2; this.vAmb = false;
+    this.beds.water = { g: wg, fl: wf }; this.waveT = 0; this.nextDrop = 2; this.vAmb = false; this.vSpeak = false;
     this.gust = 0; this.gustT = 0; this.nextBird = 3; this.nextCricket = 0;
     // the recorded score
     // the music sits UNDER the sound of the world: effects lead, music carries
@@ -180,7 +180,7 @@ export class Score {
     this.fbuf = new Uint8Array(this.an.frequencyBinCount); this.avgB = 0; this.avgT = 0;
     this.cues = {};
     for (const [k, f] of Object.entries(CUE_FILES)) {
-      const el = new Audio('audio/' + f + '.mp3?v=31');
+      const el = new Audio('audio/' + f + '.mp3?v=32');
       el.preload = 'auto'; el.loop = false; el.preservesPitch = false; el.mozPreservesPitch = false; el.webkitPreservesPitch = false;
       el.crossOrigin = 'anonymous';
       const src = ctx.createMediaElementSource(el), g = ctx.createGain(); g.gain.value = 0;
@@ -190,7 +190,7 @@ export class Score {
       el.muted = true; el.play().then(() => { el.muted = false; if (this.cue !== k || !this.running || this.muted) el.pause(); }).catch(() => { el.muted = false; });
     }
     this.cue = null;
-    fetch('audio/hits.mp3?v=31').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this.buf.hits = buf; this.buf.hitsR = reversed(ctx, buf); }).catch(() => {});
+    fetch('audio/hits.mp3?v=32').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this.buf.hits = buf; this.buf.hitsR = reversed(ctx, buf); }).catch(() => {});
 
     await this.renderOneShots();
     this.out.gain.setTargetAtTime(this.muted ? 0 : 0.9, ctx.currentTime, 0.8);
@@ -494,6 +494,7 @@ export class Score {
   // music steps back for a moment
   // voice over on: water instead of air, since the air's hiss under a voice sounds like a noisy recording
   voiceBed(on) { this.vAmb = on; }
+  voiceSpeaking(on) { this.vSpeak = on; }
 
   drop() {  // one soft drop of water, far off
     const ctx = this.ctx, t = ctx.currentTime + 0.01, f = 700 + Math.random() * 900;
@@ -620,7 +621,9 @@ export class Score {
     this.mfilt.frequency.setTargetAtTime(st.freeze ? 1000 : 18000, now, st.freeze ? 0.3 : 0.08);
 
     const B = this.beds, set = (b, x, tc = 0.4) => b.g.gain.setTargetAtTime(x, now, tc);
-    set(B.rain, st.rain * 0.45); set(B.rainLow, st.rain * 0.3);
+    // the rain sits well back, and further still while a voice speaks
+    const rainK = st.rain * (this.vSpeak ? 0.6 : 1);
+    set(B.rain, rainK * 0.2, 0.8); set(B.rainLow, rainK * 0.18, 0.8);
     set(B.rumble, st.rumble * 0.8); set(B.fire, st.fire * 0.3);
     set(B.wind, Math.min(0.4, Math.max(0, av - 2) * 0.025), 0.1);
     // the air: never still, gusts come and go; it steps back when music plays
@@ -635,9 +638,10 @@ export class Score {
     this.waveT += dt;
     const wave = 0.5 - 0.5 * Math.cos(this.waveT * Math.PI * 2 / 6.5), swell = 0.6 + 0.4 * Math.sin(this.waveT * Math.PI * 2 / 17);
     const tide = 0.12 + 0.88 * Math.pow(0.5 - 0.5 * Math.cos(this.waveT * Math.PI * 2 / 95), 1.5);
-    set(B.water, this.vAmb ? (0.012 + 0.016 * wave * swell) * tide * (st.credits ? 0.3 : 1) : 0, 0.6);
+    // about half as loud as before, and it nearly falls away while a voice speaks, so it never reads as rain
+    set(B.water, this.vAmb ? (0.006 + 0.008 * wave * swell) * tide * (st.credits ? 0.3 : 1) * (this.vSpeak ? 0.35 : 1) : 0, this.vSpeak ? 0.8 : 1.5);
     B.water.fl.frequency.setTargetAtTime(320 + 520 * wave, now, 0.6);
-    if (this.vAmb && !st.freeze && tide > 0.6 && (this.nextDrop -= dt) <= 0) { this.nextDrop = 5 + Math.random() * 10; this.drop(); }
+    if (this.vAmb && !this.vSpeak && !st.freeze && tide > 0.6 && (this.nextDrop -= dt) <= 0) { this.nextDrop = 5 + Math.random() * 10; this.drop(); }
     // birds far and near
     if (st.birds > 0 && !st.freeze) {
       this.nextBird -= dt * st.birds;

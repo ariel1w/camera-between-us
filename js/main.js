@@ -3,10 +3,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SECTIONS } from './content.js?v=31';
-import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=31';
-import { Score } from './audio.js?v=31';
-import { Presence } from './presences.js?v=31';
+import { SECTIONS } from './content.js?v=32';
+import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=32';
+import { Score } from './audio.js?v=32';
+import { Presence } from './presences.js?v=32';
 
 const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 600;
@@ -171,7 +171,7 @@ const SKY_LEVEL = [0.55, 0.5, 0.55, 0.55, 0.5, 0.75, 0.65, 0.5, 0.45, 0.5, 0.55,
 const skyLoader = new THREE.TextureLoader();
 const skies = SKY_FILES.map((name, k) => {
   const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-  skyLoader.load('img/bg-' + name + '.jpg?v=31', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
+  skyLoader.load('img/bg-' + name + '.jpg?v=32', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(680, 383), mat);
   mesh.position.z = -175; mesh.renderOrder = -10; mesh.visible = false; mesh.frustumCulled = false;
   scene.add(mesh);
@@ -488,14 +488,15 @@ function voLine(k) {
   // a short wait, so racing through lines does not stutter out a syllable of each
   const lead = Math.max(0, voFirst - performance.now()), carried = lead > 0;
   voT = setTimeout(() => {
-    voSlot = k; vo.src = 'audio/vo/' + dir + '/' + sl.sec + '-' + sl.li + '.mp3?v=31';
+    voSlot = k; vo.src = 'audio/vo/' + dir + '/' + sl.sec + '-' + sl.li + '.mp3?v=32';
     vo.playbackRate = voRate();
     voFadeIn();
     // the first line is carried by the music that led into it; later lines ask it to step back a little
     vo.play().then(() => { if (score.ready && !carried) score.duck(0.82, (vo.duration || 4) / voRate(), 0.5); }).catch(() => { voSlot = -1; });
   }, Math.max(lead, auto ? 60 : 280));
 }
-vo.onended = vo.onerror = () => { voSlot = -1; };
+vo.onended = vo.onerror = () => { voSlot = -1; score.voiceSpeaking(false); };
+vo.onplaying = () => score.voiceSpeaking(true); vo.onpause = () => score.voiceSpeaking(false);
 function voHolds(cur) {
   if (voSlot < 0 || slots[voSlot] !== cur || vo.paused) return false;
   return (autoY / UNIT - cur.start) / cur.len > 0.82;
@@ -886,7 +887,7 @@ function frame(now) {
   score.update(dt, {
     mood: si, vel, flow, freeze,
     intensity: si === 15 ? (slot.kind === 'credits' ? 0.75 : 0.55 + 0.3 * sst(0, info.n, lp) + 0.25 * sst(0, 2, q.cannot)) : INTENSITY[si],
-    rain: si === 9 || si === 14 ? rainAmt * (choice === 'walk' ? 1.3 : 1) : 0,
+    rain: si === 9 || si === 14 ? rainAmt * (choice === 'walk' ? 1.15 : 1) : 0,
     rumble: si === 2 ? sst(0, 1, q.rises) * (1 - sst(0, 3, q.transformed)) * 0.8 + sst(0, 0.5, q.fractures) * (1 - sst(0, 2, q.erodes)) * 0.4 : (si === 15 ? shut * 0.6 : 0),
     fire: si === 4 ? sst(0, 1, q.extract) * (1 - sst(0, 1.5, q.wonder)) : 0,
     projector: si === 1 ? sw : 0,

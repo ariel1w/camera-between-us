@@ -97,6 +97,10 @@ function noiseBuf(ctx, secs) {
   return buf;
 }
 
+// the voice clips are all brought to -18 LUFS and played at half level; VOICE_REF is how that reads on the meter
+// while a line is spoken (calibrated by tools/mix_sweep.mjs), and the score is held RIDE_MARGIN dB under it
+const VOICE_REF = -21, RIDE_MARGIN = 15;
+
 export class Score {
   constructor() {
     this.buf = {};
@@ -117,7 +121,24 @@ export class Score {
     this.mfilt = ctx.createBiquadFilter(); this.mfilt.type = 'lowpass'; this.mfilt.frequency.value = 18000; this.mfilt.Q.value = 0.5;
     // a brick wall limiter after the glue compressor, so nothing can ever clip
     const lim = ctx.createDynamicsCompressor(); lim.threshold.value = -4; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.002; lim.release.value = 0.15;
-    this.lim = lim; this.mfilt.connect(comp); comp.connect(lim); lim.connect(this.out); this.out.connect(ctx.destination);
+    this.lim = lim; this.mfilt.connect(comp); comp.connect(lim);
+    // the voice comes first: while a line is spoken, the rider holds everything else RIDE_MARGIN dB under it
+    // first a pocket: while a line is spoken the score gives way where speech lives (presence around 2 kHz,
+    // and a little of the low mids, where Neil's deep voice has its body), so the music can stay up around it
+    const pk = (f, q) => { const b = ctx.createBiquadFilter(); b.type = 'peaking'; b.frequency.value = f; b.Q.value = q; b.gain.value = 0; return b; };
+    this.pocket = [pk(2200, 0.7), pk(320, 1.1)];
+    this.rider = ctx.createGain(); lim.connect(this.pocket[0]); this.pocket[0].connect(this.pocket[1]); this.pocket[1].connect(this.rider);
+    this.rider.connect(this.out); this.out.connect(ctx.destination);
+    // both are metered through the same rough loudness weighting (no deep bass, a lift where the ear is keen)
+    const meter = from => {
+      const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 100;
+      const sh = ctx.createBiquadFilter(); sh.type = 'highshelf'; sh.frequency.value = 1500; sh.gain.value = 4;
+      const an = ctx.createAnalyser(); an.fftSize = 2048; from.connect(hp); hp.connect(sh); sh.connect(an);
+      return { an, buf: new Float32Array(2048), db: -90 };
+    };
+    this.bgMeter = meter(this.pocket[1]);
+    this.vIn = ctx.createGain(); this.vIn.connect(ctx.destination); this.vMeter = meter(this.vIn);
+    this.ride = 0;
     this.bus = ctx.createGain(); this.bus.gain.value = 0.42; this.bus.connect(this.mfilt);
     this.verb = ctx.createConvolver(); this.verb.buffer = makeIR(ctx);
     this.verbIn = ctx.createGain(); this.verbIn.gain.value = 1; this.verbIn.connect(this.verb);
@@ -130,6 +151,10 @@ export class Score {
     // textured beds from one stereo noise loop (scene sound design)
     const nb = noiseBuf(ctx, 5);
     this.bedBus = ctx.createGain(); this.bedBus.gain.value = 1; this.bedBus.connect(this.bus);
+    // the effects (footsteps, shutters, clicks, booms) have their own bus and their own echo send, so they can
+    // step back under a voice further than the music does, as foley does in a film mix
+    this.fx = ctx.createGain(); this.fx.connect(this.bus);
+    this.fxVerb = ctx.createGain(); this.fxVerb.connect(this.verbIn);
     const bed = (type, f, q) => {
       const src = ctx.createBufferSource(); src.buffer = nb; src.loop = true; src.start(0, Math.random() * 4);
       const fl = ctx.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q;
@@ -180,7 +205,7 @@ export class Score {
     this.fbuf = new Uint8Array(this.an.frequencyBinCount); this.avgB = 0; this.avgT = 0;
     this.cues = {};
     for (const [k, f] of Object.entries(CUE_FILES)) {
-      const el = new Audio('audio/' + f + '.mp3?v=32');
+      const el = new Audio('audio/' + f + '.mp3?v=33');
       el.preload = 'auto'; el.loop = false; el.preservesPitch = false; el.mozPreservesPitch = false; el.webkitPreservesPitch = false;
       el.crossOrigin = 'anonymous';
       const src = ctx.createMediaElementSource(el), g = ctx.createGain(); g.gain.value = 0;
@@ -190,7 +215,7 @@ export class Score {
       el.muted = true; el.play().then(() => { el.muted = false; if (this.cue !== k || !this.running || this.muted) el.pause(); }).catch(() => { el.muted = false; });
     }
     this.cue = null;
-    fetch('audio/hits.mp3?v=32').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this.buf.hits = buf; this.buf.hitsR = reversed(ctx, buf); }).catch(() => {});
+    fetch('audio/hits.mp3?v=33').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this.buf.hits = buf; this.buf.hitsR = reversed(ctx, buf); }).catch(() => {});
 
     await this.renderOneShots();
     this.out.gain.setTargetAtTime(this.muted ? 0 : 0.9, ctx.currentTime, 0.8);
@@ -349,8 +374,8 @@ export class Score {
     }
     if (inst) node.connect(this.inst);
     else {
-      node.connect(this.bus);
-      if (verb > 0) { const vg = ctx.createGain(); vg.gain.value = verb; node.connect(vg); vg.connect(this.verbIn); }
+      node.connect(this.fx);
+      if (verb > 0) { const vg = ctx.createGain(); vg.gain.value = verb; node.connect(vg); vg.connect(this.fxVerb); }
     }
     s.start(at || ctx.currentTime + when);
   }
@@ -494,7 +519,38 @@ export class Score {
   // music steps back for a moment
   // voice over on: water instead of air, since the air's hiss under a voice sounds like a noisy recording
   voiceBed(on) { this.vAmb = on; }
-  voiceSpeaking(on) { this.vSpeak = on; }
+  // the voice is about to speak, is speaking, or has stopped (the mix keeps its place for 0.6 s after, so it breathes between lines, not between words)
+  voiceSoon() { if (this.ctx) this.vUntil = Math.max(this.vUntil || 0, this.ctx.currentTime + 0.6); }
+  voiceSpeaking(on) { this.vSpeak = on; if (!on) this.voiceSoon(); }
+
+  // short term level of a meter, in dB
+  level(m, dt, tc) {
+    m.an.getFloatTimeDomainData(m.buf);
+    let e = 0; for (let i = 0; i < m.buf.length; i++) e += m.buf[i] * m.buf[i];
+    const db = 10 * Math.log10(e / m.buf.length + 1e-12);
+    // rises fast, falls slowly: a sudden swell counts at once, a gap between notes does not
+    m.db = db > m.db ? m.db + (db - m.db) * Math.min(1, dt / 0.05) : m.db + (db - m.db) * Math.min(1, dt / tc);
+    return m.db;
+  }
+
+  // the rider: while a voice speaks (and half a second after), the score may not come closer than RIDE_MARGIN dB to it
+  rideUnder(dt) {
+    const now = this.ctx.currentTime, bg = this.level(this.bgMeter, dt, 0.4), v = this.level(this.vMeter, dt, 0.6);
+    const on = this.vSpeak || now < (this.vUntil || 0);
+    if (on !== this.vOn) {  // the dialogue mix: the pocket opens and the ambience steps back about 8 dB, then both return gently
+      this.vOn = on;
+      this.pocket[0].gain.setTargetAtTime(on ? -6 : 0, now, on ? 0.12 : 0.9);
+      this.pocket[1].gain.setTargetAtTime(on ? -3 : 0, now, on ? 0.12 : 0.9);
+      this.bedBus.gain.setTargetAtTime(on ? 0.4 : 1, now, on ? 0.15 : 1.1);
+      for (const g of [this.fx.gain, this.fxVerb.gain]) g.setTargetAtTime(on ? 0.3 : 1, now, on ? 0.1 : 1.1);
+    }
+    // and the safety net: whatever is left may not come within RIDE_MARGIN dB of the voice
+    const cut = on ? Math.max(-24, Math.min(0, VOICE_REF - RIDE_MARGIN - bg)) : 0;
+    this.ride = cut;
+    this.rider.gain.setTargetAtTime(Math.pow(10, cut / 20), now, cut < this.rideNow ? 0.1 : 1);
+    this.rideNow = cut;
+    this.meterNow = { bg, v, cut, on };
+  }
 
   drop() {  // one soft drop of water, far off
     const ctx = this.ctx, t = ctx.currentTime + 0.01, f = 700 + Math.random() * 900;
@@ -506,6 +562,8 @@ export class Score {
   duck(level, secs, ease = 0.08) {  // ease: how gently the music steps back (time constant, seconds)
     const now = this.ctx.currentTime;
     this.music.gain.cancelScheduledValues(now);
+    // the finale is the one piece that plays on under the dialogue, so it gives way further
+    if (this.cue === 'finale') level *= 0.7;
     this.music.gain.setTargetAtTime(level * this.musicLevel, now, ease);
     this.music.gain.setTargetAtTime(this.musicLevel, now + secs, 0.8);
   }
@@ -620,11 +678,12 @@ export class Score {
     }
     this.mfilt.frequency.setTargetAtTime(st.freeze ? 1000 : 18000, now, st.freeze ? 0.3 : 0.08);
 
+    this.rideUnder(dt);
     const B = this.beds, set = (b, x, tc = 0.4) => b.g.gain.setTargetAtTime(x, now, tc);
     // the rain sits well back, and further still while a voice speaks
     const rainK = st.rain * (this.vSpeak ? 0.6 : 1);
     set(B.rain, rainK * 0.2, 0.8); set(B.rainLow, rainK * 0.18, 0.8);
-    set(B.rumble, st.rumble * 0.8); set(B.fire, st.fire * 0.3);
+    set(B.rumble, st.rumble * 0.8); set(B.fire, st.fire * 0.2);
     set(B.wind, Math.min(0.4, Math.max(0, av - 2) * 0.025), 0.1);
     // the air: never still, gusts come and go; it steps back when music plays
     this.gustT -= dt;

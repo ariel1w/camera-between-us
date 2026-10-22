@@ -3,10 +3,11 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SECTIONS } from './content.js?v=32';
-import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=32';
-import { Score } from './audio.js?v=32';
-import { Presence } from './presences.js?v=32';
+import { SECTIONS } from './content.js?v=33';
+import { initScenes, O, SKY_LABELS, skyAnchor, sst, fract, mix } from './scenes.js?v=33';
+import { Score } from './audio.js?v=33';
+import { Presence } from './presences.js?v=33';
+import { VO_GAIN } from './vogain.js?v=33';
 
 const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 600;
@@ -55,7 +56,8 @@ let total = 0;
 const secInfo = [];
 SECTIONS.forEach((sec, si) => {
   const info = { start: total, titleSlot: slots.length, lineSlot0: slots.length + 1, n: sec.lines.length, cueIdx: {} };
-  slots.push({ kind: 'title', sec: si, start: total, len: 3.4, dur: 2.8 }); total += 3.4;
+  // chapter titles stay long enough to read twice: about six seconds, at any reading speed up to 1x
+  slots.push({ kind: 'title', sec: si, start: total, len: 5, dur: 6 }); total += 5;
   sec.lines.forEach((ln, li) => {
     const words = ln.t.split(/\s+/).length;
     const hero = isHero(ln.t), short = !hero && words <= 3 && ln.s !== 'H';
@@ -171,7 +173,7 @@ const SKY_LEVEL = [0.55, 0.5, 0.55, 0.55, 0.5, 0.75, 0.65, 0.5, 0.45, 0.5, 0.55,
 const skyLoader = new THREE.TextureLoader();
 const skies = SKY_FILES.map((name, k) => {
   const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-  skyLoader.load('img/bg-' + name + '.jpg?v=32', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
+  skyLoader.load('img/bg-' + name + '.jpg?v=33', tex => { tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.needsUpdate = true; });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(680, 383), mat);
   mesh.position.z = -175; mesh.renderOrder = -10; mesh.visible = false; mesh.frustumCulled = false;
   scene.add(mesh);
@@ -466,34 +468,38 @@ const VO_MODES = ['off', 'duo'], VO_NAMES = { off: 'Voice off', duo: 'Voice: Nei
 let voMode = 'duo';
 try { const v = localStorage.getItem('cbu-vo'); if (VO_MODES.includes(v)) voMode = v; } catch (e) {}
 const vo = new Audio(); vo.preload = 'auto'; vo.preservesPitch = true; vo.mozPreservesPitch = true; vo.webkitPreservesPitch = true;
-let voSlot = -1, voT = 0, voGain = null, voFirst = 0;  // voFirst: when the very first line may speak
+let voSlot = -1, voT = 0, voSoonT = 0, voGain = null, voFirst = 0;  // voFirst: when the very first line may speak
 // the voice sits inside the music, not on top of it: about 6 dB down, and each line fades in instead of arriving at full force
 const VO_LEVEL = 0.5;
 vo.volume = VO_LEVEL;
-function voFadeIn() {
+function voFadeIn(clip) {
   if (!voGain && score.ctx) {
-    try { const src = score.ctx.createMediaElementSource(vo); voGain = score.ctx.createGain(); src.connect(voGain); voGain.connect(score.ctx.destination); vo.volume = 1; } catch (e) {}
+    try { const src = score.ctx.createMediaElementSource(vo); voGain = score.ctx.createGain(); src.connect(voGain); voGain.connect(score.vIn); vo.volume = 1; } catch (e) {}
   }
   score.voiceBed(true);
   if (!voGain) return;
   const now = score.ctx.currentTime;
-  voGain.gain.cancelScheduledValues(now); voGain.gain.setValueAtTime(0, now); voGain.gain.linearRampToValueAtTime(VO_LEVEL, now + 0.35);
+  voGain.gain.cancelScheduledValues(now); voGain.gain.setValueAtTime(0, now); voGain.gain.linearRampToValueAtTime(VO_LEVEL * Math.pow(10, (VO_GAIN[clip] || 0) / 20), now + 0.35);
 }
 const voRate = () => Math.max(1, SPEEDS[speedIdx]);
 function voLine(k) {
-  clearTimeout(voT); vo.pause(); voSlot = -1;
+  clearTimeout(voT); clearTimeout(voSoonT); vo.pause(); voSlot = -1;
   const sl = slots[k];
   if (voMode === 'off' || score.muted || !sl || sl.kind !== 'line' || (sl.line.s !== 'N' && sl.line.s !== 'L')) return;
   const dir = sl.line.s === 'N' ? 'N' : 'L';
   // a short wait, so racing through lines does not stutter out a syllable of each
   const lead = Math.max(0, voFirst - performance.now()), carried = lead > 0;
+  // a sound that lands on this line strikes first, and the voice follows just after it, in the clear
+  const wait = Math.max(lead, auto ? 60 : 280) + (EVENT_SLOTS.has(k) ? 450 : 0);
+  // the mix makes room a quarter second before the first word
+  voSoonT = setTimeout(() => score.voiceSoon(), Math.max(0, wait - 250));
   voT = setTimeout(() => {
-    voSlot = k; vo.src = 'audio/vo/' + dir + '/' + sl.sec + '-' + sl.li + '.mp3?v=32';
+    voSlot = k; vo.src = 'audio/vo/' + dir + '/' + sl.sec + '-' + sl.li + '.mp3?v=33';
     vo.playbackRate = voRate();
-    voFadeIn();
+    voFadeIn(dir + '/' + sl.sec + '-' + sl.li);
     // the first line is carried by the music that led into it; later lines ask it to step back a little
     vo.play().then(() => { if (score.ready && !carried) score.duck(0.82, (vo.duration || 4) / voRate(), 0.5); }).catch(() => { voSlot = -1; });
-  }, Math.max(lead, auto ? 60 : 280));
+  }, wait);
 }
 vo.onended = vo.onerror = () => { voSlot = -1; score.voiceSpeaking(false); };
 vo.onplaying = () => score.voiceSpeaking(true); vo.onpause = () => score.voiceSpeaking(false);
@@ -549,6 +555,7 @@ const EVENTS = [
   if (li < 0) console.warn('event line missing', txt);
   return { slot: li < 0 ? -1 : secInfo[si].lineSlot0 + li, fn };
 }).filter(e => e.slot >= 0);
+const EVENT_SLOTS = new Set(EVENTS.map(e => e.slot));
 
 // camera flights: each section has its own move (p = progress through the section)
 const camOut = new THREE.Vector3(), camAim = new THREE.Vector3(), aimNow = new THREE.Vector3(0, 1, 0);
@@ -596,7 +603,7 @@ function frame(now) {
   if (auto && started) {
     const cur = slots[slotAt(autoY / UNIT)];
     if (cur.kind === 'credits' && autoY / UNIT > cur.start + 4) setAuto(false);
-    else if (!voHolds(cur)) { autoY += cur.len / cur.dur * SPEEDS[speedIdx] * dt * UNIT; window.scrollTo(0, autoY); }
+    else if (!voHolds(cur)) { autoY += cur.len / cur.dur * (cur.kind === 'title' ? Math.max(1, SPEEDS[speedIdx]) : SPEEDS[speedIdx]) * dt * UNIT; window.scrollTo(0, autoY); }
   }
   const target = scrollY / UNIT;
   pos += (target - pos) * (1 - Math.exp(-dt * 6.5));
